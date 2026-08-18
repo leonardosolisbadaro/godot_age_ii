@@ -1,0 +1,31 @@
+# Godot 4+ specific ignores
+.godot/
+.nomedia
+
+# Godot-specific ignores
+.import/
+export.cfg
+export_credentials.cfg
+
+# Imported translations (automatically generated from CSV files)
+*.translation
+
+# Mono-specific ignores
+.mono/
+data_*/
+mono_crash.*.json
+
+# QuanticNet & External Plugin Junctions
+/addons/quantic_net
+/addons/gut
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+*.log
+
+# Submodules
+/submodules/
+
+# Others
+/GodotEngine_extracted/
