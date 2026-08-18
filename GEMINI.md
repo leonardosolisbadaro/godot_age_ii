@@ -29,6 +29,7 @@ A IA deve operar **estritamente** no seguinte ciclo de 3 passos:
 ## 4. O MANDATO DE TESTES (TDD Obrigatório)
 
 Nenhuma mecânica nova pode ser implementada sem um teste unitário a justificá-la.
+
 - **Metodologia AAA:** Cada teste deve ser estruturado em **Arrange**, **Act** e **Assert**.
 - **Framework Obrigatório:** **bitwes/Gut**.
 

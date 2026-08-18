@@ -6,7 +6,7 @@ Projeto desenvolvido em **Godot Engine 4.7** com arquitetura limpa (**Clean Arch
 
 ## 🏛️ Estrutura Arquitetural
 
-```
+```text
 godot_age_ii/
 ├── addons/
 │   ├── quantic_net/       # Junction para o plugin de rede QuanticNet
