@@ -138,7 +138,7 @@ class MaterialTreeResolver:
             result["two_sided"] = bool(props.get("TwoSided", False))
 
             # 1. Tenta carregar .mat pré-exportado pelo UModel se existir
-            umodel_mat = self.textures_root.parent.parent / "UmodelExport" / pkg_name.lower() / "Shader" / f"{material_name}.mat"
+            umodel_mat = self.textures_out_dir.parent.parent / "UmodelExport" / pkg_name.lower() / "Shader" / f"{material_name}.mat"
             if not umodel_mat.is_file():
                 # Tenta caminhos alternativos de UmodelExport
                 for alt_root in [Path("UmodelExport"), Path(r"C:\Users\LEONARDO\Downloads\Compressed\umodel_win32\UmodelExport")]:
