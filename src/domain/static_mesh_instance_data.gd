@@ -67,13 +67,9 @@ func from_actor_dictionary(dict: Dictionary) -> void:
 
 
 func get_transform() -> Transform3D:
-	var t = Transform3D()
-	t = t.scaled(scale)
-	t = t.rotated(Vector3(1, 0, 0), rotation_radians.x)
-	t = t.rotated(Vector3(0, 1, 0), rotation_radians.y)
-	t = t.rotated(Vector3(0, 0, 1), rotation_radians.z)
-	t.origin = position
-	return t
+	var b = Basis.from_euler(rotation_radians)
+	b = b.scaled(scale)
+	return Transform3D(b, position)
 
 
 func get_world_aabb() -> AABB:

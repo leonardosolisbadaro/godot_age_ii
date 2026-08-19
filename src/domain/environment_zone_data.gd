@@ -42,7 +42,7 @@ func _init(p_zone_name: String = "") -> void:
 
 
 func from_recipe_dictionary(dict: Dictionary) -> void:
-	var sun_dict = dict.get("sun_light", {})
+	var sun_dict = dict.get("sunlight", dict.get("sun_light", {}))
 	if not sun_dict.is_empty():
 		var dir_arr = sun_dict.get("direction", [sun_direction.x, sun_direction.y, sun_direction.z])
 		if dir_arr.size() >= 3:
@@ -52,7 +52,7 @@ func from_recipe_dictionary(dict: Dictionary) -> void:
 			sun_color = Color(float(col_arr[0]), float(col_arr[1]), float(col_arr[2]))
 		sun_energy = float(sun_dict.get("energy", sun_energy))
 
-	var moon_dict = dict.get("moon_light", {})
+	var moon_dict = dict.get("moonlight", dict.get("moon_light", {}))
 	if not moon_dict.is_empty():
 		var dir_arr = moon_dict.get("direction", [moon_direction.x, moon_direction.y, moon_direction.z])
 		if dir_arr.size() >= 3:
@@ -62,14 +62,14 @@ func from_recipe_dictionary(dict: Dictionary) -> void:
 			moon_color = Color(float(col_arr[0]), float(col_arr[1]), float(col_arr[2]))
 		moon_energy = float(moon_dict.get("energy", moon_energy))
 
-	var amb_dict = dict.get("ambient", {})
+	var amb_dict = dict.get("ambient_lighting", dict.get("ambient", {}))
 	if not amb_dict.is_empty():
 		var col_arr = amb_dict.get("color_rgb", [0.2, 0.2, 0.25])
 		if col_arr.size() >= 3:
 			ambient_light_color = Color(float(col_arr[0]), float(col_arr[1]), float(col_arr[2]))
 		ambient_light_energy = float(amb_dict.get("energy", ambient_light_energy))
 
-	var fog_dict = dict.get("fog", {})
+	var fog_dict = dict.get("distance_fog", dict.get("fog", {}))
 	if not fog_dict.is_empty():
 		fog_enabled = bool(fog_dict.get("enabled", fog_enabled))
 		var col_arr = fog_dict.get("color_rgb", [0.7, 0.8, 0.9])

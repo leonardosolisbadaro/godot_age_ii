@@ -55,18 +55,20 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
 
 ## Fase 3: Casos de Uso & Adaptadores (Clean Architecture)
 
-- [ ] **3.1 Casos de Uso (`src/use_cases/`)**
-  - [ ] `LoadChunkMetadataUseCase`: Carregar e validar integridade dos metadados de chunk.
-  - [ ] `BuildChunkCollisionUseCase`: Montar representação física (Trimesh / Convex Shapes) sem alocação visual.
-  - [ ] `SampleWorldAltitudeUseCase`: Consulta centralizada de altitude para física, spawns e entidades.
-  - [ ] `EvaluateChunkWaterPresenceUseCase`: Determinar presença e nível de água para cada chunk.
-  - [ ] `StreamWorldChunksUseCase`: Orquestrar carregamento e descarregamento dinâmico de chunks com base no raio de visão (LOD).
-  - [ ] `ValidatePlayerMovementUseCase`: Validação autoritativa de inputs de movimentação no servidor.
+- [x] **3.1 Casos de Uso (`src/use_cases/`)**
+  - [x] `LoadChunkMetadataUseCase`: Carregar e validar integridade dos metadados de chunk.
+  - [x] `LoadServerHeightfieldUseCase`: Construir instância do HeightfieldSampler para física autoritativa.
+  - [x] `SampleWorldAltitudeUseCase`: Consulta centralizada de altitude para física, spawns e entidades.
+  - [x] `EvaluateChunkWaterPresenceUseCase`: Determinar presença e nível de água para cada chunk.
+  - [x] `StreamWorldChunksUseCase`: Orquestrar carregamento e descarregamento dinâmico de chunks com base no raio de visão (LOD).
+  - [x] `ValidatePlayerMovementUseCase`: Validação autoritativa de inputs de movimentação no servidor.
 
-- [ ] **3.2 Adaptadores de Recursos e Rede (`src/adapters/`)**
-  - [ ] `ChunkResourceAdapter`: Leitura e cache otimizado de arquivos binários, receitas JSON, GLBs e texturas.
-  - [ ] `StaticMeshLibraryAdapter`: Gerenciador de instâncias de StaticMeshes em memória.
-  - [ ] `QuanticNetServerAdapter`: Conectar a lógica de validação espacial ao pipeline de rede autoritativo do QuanticNet.
+- [x] **3.2 Adaptadores de Recursos, Visualização e Rede (`src/adapters/`)**
+  - [x] `ChunkResourceAdapter`: Leitura e cache otimizado de arquivos binários, receitas JSON, GLBs e texturas.
+  - [x] `StaticMeshInstanceAdapter`: Gerenciamento e instanciamento em lote de malhas estáticas via MultiMeshInstance3D.
+  - [x] `EnvironmentZoneAdapter`: Tradutor de atmosfera para nós DirectionalLight3D e WorldEnvironment.
+  - [x] `TerrainChunkAdapter`: Tradutor de nós visuais MeshInstance3D para malhas de terreno compiladas.
+  - [x] `QuanticNetServerAdapter`: Conectar a lógica de validação espacial ao pipeline de rede autoritativo do QuanticNet.
 
 ---
 
