@@ -36,18 +36,20 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
 
 ## Fase 2: Core Domain & Regras de Negócio Puras com TDD (GUT)
 
-- [ ] **2.1 Entidades de Domínio Espacial & Terreno (`src/domain/`)**
-  - [ ] `TerrainChunkData`: Representação imutável de metadados, dimensões, escala e cotas de elevação.
-  - [ ] `HeightfieldSampler`: Amostrador O(1) de interpolação bilinear contínua em coordenadas mundiais com cobertura total do grid.
-  - [ ] `TerrainHoleMask`: Validador de quads perfurados/invisíveis para colisão e travessia em cavernas.
-  - [ ] `StaticMeshInstanceData`: Entidade para posicionamento, rotação e caixas delimitadoras (AABB) de objetos estáticos.
-  - [ ] `EnvironmentZoneData`: Definições puras de atmosfera, névoa e nível dos oceanos/águas.
+- [x] **2.1 Entidades de Domínio Espacial & Terreno (`src/domain/`)**
+  - [x] `TerrainChunkData`: Representação imutável de metadados, dimensões, escala e cotas de elevação.
+  - [x] `HeightfieldSampler`: Amostrador O(1) de interpolação bilinear contínua em coordenadas mundiais com cobertura total do grid.
+  - [x] `TerrainHoleMask`: Validador de quads perfurados/invisíveis para colisão e travessia em cavernas.
+  - [x] `StaticMeshInstanceData`: Entidade para posicionamento, rotação e caixas delimitadoras (AABB) de objetos estáticos.
+  - [x] `EnvironmentZoneData`: Definições puras de atmosfera, névoa e nível dos oceanos/águas.
+  - [x] `ServerMovementValidator`: Validação autoritativa de movimentação com restrição de declive e velocidade.
 
-- [ ] **2.2 Mandato de Testes Unitários GUT (`tests/unit/domain/`)**
-  - [ ] Testes AAA de interpolação e amostragem de altura no terreno (`test_heightfield_sampler.gd`).
-  - [ ] Testes de conversão de coordenadas e rotações UE2 (Rotators / Left-Handed Z-Up) para Godot (Quaternions / Right-Handed Y-Up).
-  - [ ] Testes de colisão e detecção de buracos no terreno.
-  - [ ] Testes de validação autoritativa de movimento do servidor com restrição de declive e altura.
+- [x] **2.2 Mandato de Testes Unitários GUT (`tests/unit/domain/`)**
+  - [x] Testes AAA de interpolação e amostragem de altura no terreno (`test_heightfield_sampler.gd`).
+  - [x] Testes de conversão de coordenadas, caixas AABB e transformações espaciais (`test_static_mesh_instance_data.gd`).
+  - [x] Testes de colisão e detecção de buracos no terreno (`test_terrain_hole_mask.gd`).
+  - [x] Testes de validação autoritativa de movimento do servidor com restrição de declive e altura (`test_server_movement_validator.gd`).
+  - [x] Testes de atmosfera, iluminação solar e profundidade de águas (`test_environment_zone_data.gd`).
 
 ---
 
