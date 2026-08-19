@@ -44,15 +44,25 @@ func from_actor_dictionary(dict: Dictionary) -> void:
 	mesh_name = dict.get("mesh_name", mesh_name)
 	mesh_resource_path = dict.get("mesh_resource_path", mesh_resource_path)
 
-	var pos_arr = dict.get("position_meters", [position.x, position.y, position.z])
+	# Suporte a mesh_ref aninhado
+	var mesh_ref = dict.get("mesh_ref", {})
+	if not mesh_ref.is_empty():
+		mesh_name = mesh_ref.get("object_name", mesh_name)
+		var pkg = mesh_ref.get("package", "")
+		if not pkg.is_empty() and not mesh_name.is_empty():
+			mesh_resource_path = "res://assets/models/%s/%s.glb" % [pkg.to_lower(), mesh_name]
+
+	# Suporte a transform aninhado ou plano
+	var t_dict = dict.get("transform", dict)
+	var pos_arr = t_dict.get("position_meters", [position.x, position.y, position.z])
 	if pos_arr.size() >= 3:
 		position = Vector3(float(pos_arr[0]), float(pos_arr[1]), float(pos_arr[2]))
 
-	var rot_arr = dict.get("rotation_radians", [rotation_radians.x, rotation_radians.y, rotation_radians.z])
+	var rot_arr = t_dict.get("rotation_euler_rad", t_dict.get("rotation_radians", [rotation_radians.x, rotation_radians.y, rotation_radians.z]))
 	if rot_arr.size() >= 3:
 		rotation_radians = Vector3(float(rot_arr[0]), float(rot_arr[1]), float(rot_arr[2]))
 
-	var scl_arr = dict.get("scale", [scale.x, scale.y, scale.z])
+	var scl_arr = t_dict.get("scale", [scale.x, scale.y, scale.z])
 	if scl_arr.size() >= 3:
 		scale = Vector3(float(scl_arr[0]), float(scl_arr[1]), float(scl_arr[2]))
 

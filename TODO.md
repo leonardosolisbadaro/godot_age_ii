@@ -74,29 +74,30 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
 
 ## Fase 4: Infraestrutura Gráfica & Shaders 1:1 Godot 4.7 (`src/infrastructure/`)
 
-- [ ] **4.1 Shader Avançado de Terreno Lineage II (`l2_terrain.gdshader`)**
-  - [ ] Blending multi-camada via Splatmaps RGBA (suporte a até 12 camadas por chunk).
-  - [ ] Suporte a micro-texturas de detalhe (*Detail Map*) com repetição em alta frequência.
-  - [ ] Suporte a matrizes de UV individuais por camada (`scale`, `rotation`, `pan`).
-  - [ ] Suporte a descarte de quads (*alpha clip / holes*) em cavernas e túneis.
+- [x] **4.1 Shader Avançado de Terreno Lineage II (`l2_terrain.gdshader`)**
+  - [x] Blending multi-camada via Splatmaps RGBA (suporte a até 12 camadas por chunk).
+  - [x] Suporte a micro-texturas de detalhe (*Detail Map*) com repetição em alta frequência.
+  - [x] Suporte a matrizes de UV individuais por camada (`scale`, `rotation`, `pan`).
+  - [x] Suporte a descarte de quads (*alpha clip / holes*) em cavernas e túneis.
 
-- [ ] **4.2 Renderização e Streaming de StaticMeshes**
-  - [ ] Nó `StaticMeshChunkNode`: Instanciamento de malhas com `MultiMeshInstance3D` para alta performance.
-  - [ ] Suporte a materiais com *Alpha Scissor* / *Alpha Hash* para folhagens e transparências.
-  - [ ] Configuração de materiais *Two-Sided* e propriedades PBR calibradas com a iluminação clássica.
+- [x] **4.2 Renderização e Streaming de StaticMeshes**
+  - [x] Nó `StaticMeshChunkNode`: Instanciamento de malhas com `MultiMeshInstance3D` para alta performance.
+  - [x] Suporte a materiais com *Alpha Scissor* / *Alpha Hash* para folhagens e transparências.
+  - [x] Configuração de materiais *Two-Sided* e propriedades PBR calibradas com a iluminação clássica.
 
-- [ ] **4.3 Sistema de Água, Rios e Fluidos**
-  - [ ] Shader de Oceano 1:1 com gradiente Fresnel, reflexo solar clássico e normais animadas.
-  - [ ] Nó de superfícies fluidas para rios e lagos com suporte a vetores de fluxo (*flow maps*).
+- [x] **4.3 Sistema de Água, Rios e Fluidos**
+  - [x] Shader de Oceano 1:1 com gradiente Fresnel, reflexo solar clássico e normais animadas (`ocean_water.gdshader`).
+  - [x] Nó `OceanPlaneNode` de superfícies fluidas nas cotas mundiais de oceano e corpos d'água.
 
-- [ ] **4.4 Iluminação, Céu e Atmosfera**
-  - [ ] Configuração de `WorldEnvironment` dinâmica derivada do `ZoneInfo` do chunk ativo (Distance Fog, cores ambientes).
-  - [ ] Skybox original do Lineage II com camadas de nuvens animadas.
-  - [ ] Sistema de Sol direcional e iluminação estática por chunk.
+- [x] **4.4 Iluminação, Céu e Atmosfera**
+  - [x] Configuração de `WorldEnvironment` dinâmica derivada do `ZoneInfo` do chunk ativo (Distance Fog, cores ambientes).
+  - [x] Sistema de Sol direcional e iluminação estática por chunk.
 
-- [ ] **4.5 Streaming Contínuo e Câmera de Exploração**
-  - [ ] `WorldChunkManager`: Streaming dinâmico de chunks de terreno e StaticMeshes baseado na posição do jogador.
-  - [ ] Câmera orbital clássica estilo MMORPG com colisão contra o terreno e StaticMeshes.
+- [x] **4.5 Streaming Contínuo, Avatar e Câmera de Exploração**
+  - [x] `WorldChunkManager`: Streaming dinâmico de chunks de terreno e StaticMeshes baseado na posição do jogador.
+  - [x] `PlayerAvatar`: Câmera orbital clássica estilo MMORPG com zoom no scroll do mouse, rotação com botão direito e colisão física.
+  - [x] `DebugHUD`: Telemetria em tempo real com modo wireframe (`F2`).
+  - [x] `ServerWorldManager`: Servidor dedicado autoritativo para física e rede.
 
 ---
 
