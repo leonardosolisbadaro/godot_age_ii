@@ -414,7 +414,7 @@ Nenhuma mecânica nova pode ser implementada sem um teste unitário a justificá
 ## @created {{CURRENT_DATE}}
 ## @updated {{CURRENT_DATE}}
 ##
-## @author Leonardo S. Badaró (with Gemini 3.7 Flash - High)
+## @author Leonardo S. Badaró
 ```
 '@
 $geminiContent = $geminiContent.Replace("{{PROJECT_NAME}}", $ProjectName).Replace("{{CURRENT_DATE}}", $CurrentDate)
@@ -469,7 +469,7 @@ Projeto desenvolvido em **Godot Engine 4.7** com arquitetura limpa (**Clean Arch
 
 ## 🏛️ Estrutura Arquitetural
 
-```
+```txt
 {{PROJECT_NAME}}/
 ├── addons/
 │   ├── quantic_net/       # Junction para o plugin de rede QuanticNet
@@ -637,7 +637,7 @@ $mainGdContent = @'
 ## @created {{CURRENT_DATE}}
 ## @updated {{CURRENT_DATE}}
 ##
-## @author Leonardo S. Badaró (with Gemini 3.7 Flash - High)
+## @author Leonardo S. Badaró
 extends Node3D
 
 const PORT := 4242
@@ -697,7 +697,7 @@ $testExampleContent = @'
 ## @created {{CURRENT_DATE}}
 ## @updated {{CURRENT_DATE}}
 ##
-## @author Leonardo S. Badaró (with Gemini 3.7 Flash - High)
+## @author Leonardo S. Badaró
 extends GutTest
 
 

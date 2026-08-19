@@ -8,7 +8,7 @@
 ## @created 2026-08-18
 ## @updated 2026-08-18
 ##
-## @author Leonardo S. Badaró (with Gemini 3.7 Flash - High)
+## @author Leonardo S. Badaró
 extends GutTest
 
 

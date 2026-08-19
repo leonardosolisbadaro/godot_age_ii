@@ -30,3 +30,7 @@ Thumbs.db
 # Others
 /GodotEngine_extracted/
 /draft/
+/test_output_textures/
+/test_output_meshes/
+/UmodelExport/
+/assets/
