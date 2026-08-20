@@ -125,3 +125,26 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
   - [ ] Teste de telemetria do `DebugHUD` e alternador de Wireframe (`F2`).
   - [ ] Teste de conectividade e sincronização de rede QuanticNet (Host / Join local).
 
+---
+
+## Fase 6: Revisão Completa, Refinamento Arquitetural & Limpeza
+
+- [x] **6.1 Limpeza de Código Morto e Refinamento de Estrutura**
+  - [x] Excluir diretório de código legado/monolítico `draft/` e arquivos temporários `test_output_*/`, `scratch/`.
+  - [x] Eliminar scripts de automação redundantes (`tools/clear_terrain_cache.ps1`).
+  - [x] Consolidar ferramentas de inspeção (`inspect_terrain.py`, `inspect_objects.py`, `inspect_environment.py`) no utilitário unificado `tools/inspect_map.py`.
+
+- [x] **6.2 Definição Estrita de Localização e Pre-flight Health Check**
+  - [x] Definir localização estrita de UModel em `umodel_win32/umodel_64.exe` (ou `umodel.exe`) na raiz do projeto, sem fallbacks externos.
+  - [x] Definir localização estrita de dados raw em `Lineage II/` na raiz do projeto, sem fallbacks externos.
+  - [x] Implementar módulo de *Pre-flight Health Check* (`tools/l2_extractor/validator.py`) para abortar imediatamente com relatório rico caso falte qualquer componente ou dependência.
+
+- [x] **6.3 Eliminação Absoluta de Números Mágicos & Injeção de Dependências (DI)**
+  - [x] Criar módulo de configuração centralizada `tools/l2_extractor/config.py` com dataclass `PipelineConfig` e constantes semânticas tipadas.
+  - [x] Organizar constantes no topo de cada módulo Python com documentação de "O que" e "Porque".
+  - [x] Aplicar Injeção de Dependências (DI) em todos os construtores de extratores, decodificadores e compiladores.
+
+- [x] **6.4 Padronização de Interface CLI e Resiliência a Falhas**
+  - [x] Implementar argumentos `-h` / `--help` detalhados com exemplos de uso em todos os scripts (`build_map.py`, `build_terrain.py`, `build_objects.py`, `build_environment.py`, `inspect_map.py`, `clear_terrain_cache.py`).
+  - [x] Implementar controle e recuperação de falha com mensagens detalhadas de causa/diagnóstico.
+  - [x] Atualizar suíte de testes TDD (AAA) em `tools/l2_extractor/test_extractor.py` validando ambiente, configuração e compiladores.

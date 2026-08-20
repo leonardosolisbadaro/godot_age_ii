@@ -6,7 +6,7 @@
 ## (MeshInstance3D) carregando a malha compilada e texturas do chunk.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-20
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted

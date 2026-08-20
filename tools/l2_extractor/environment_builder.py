@@ -3,25 +3,59 @@
 """
 tools/l2_extractor/environment_builder.py — Extrator de Iluminação, Atmosfera e Água
 
+@description
 Responsabilidades:
 1. Extração de atores de iluminação solar e pontual (NMovableSunLight, Sunlight, Light):
    - Conversão de rotação UE2 (Yaw/Pitch) para vetor 3D de direção de luz no Godot (DirectionalLight3D).
-   - Conversão de cores RGB e intensidade.
+   - Conversão de cores RGB e intensidade calibrada.
 2. Extração de parâmetros ambientais de ZoneInfo:
-   - Luz ambiente (AmbientLightColor).
+   - Luz ambiente (AmbientLightColor, energia).
    - Névoa de distância (DistanceFogColor, DistanceFogStart, DistanceFogEnd em metros).
 3. Extração de SkyZoneInfo e NMoon para ciclo de céu e atmosfera.
-4. Extração de volumes de água (WaterVolume, FluidSurfaceInfo) para física e renderização.
+4. Extração de volumes de água (WaterVolume, FluidSurfaceInfo) para física autoritativa e renderização.
+
+@created 2026-08-18
+@updated 2026-08-20
+@author Leonardo S. Badaró
 """
 
 import json
 import math
-import struct
 from pathlib import Path
+import struct
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from .config import (
+    PipelineConfig,
+    UE2_ROTATOR_FULL_CIRCLE,
+    UU_TO_METERS_CANONICAL,
+)
 from .package_reader import UnrealPackageReader
-from .static_mesh_builder import UU_TO_METERS_DEFAULT, ue2_rotator_to_euler
+
+
+# ==============================================================================
+# CONSTANTES SEMÂNTICAS DE AMBIENTE E ILUMINAÇÃO
+# ==============================================================================
+
+## @const DEFAULT_SUN_DIRECTION (List[float])
+## O que: Vetor 3D normalizado de direção padrão para iluminação solar no Godot ([-0.5, -0.8, -0.3]).
+## Porque: Aponta em ângulo oblíquo para baixo iluminando o terreno uniformemente.
+DEFAULT_SUN_DIRECTION: List[float] = [-0.5, -0.8, -0.3]
+
+## @const DEFAULT_SUN_COLOR_RGB (List[float])
+## O que: Cor albedo padrão do sol em RGB normalizado ([1.0, 0.95, 0.88]).
+## Porque: Temperatura de cor solar levemente aquecida (luz natural).
+DEFAULT_SUN_COLOR_RGB: List[float] = [1.0, 0.95, 0.88]
+
+## @const DEFAULT_FOG_BEGIN_METERS (float)
+## O que: Distância inicial padrão em metros para o início da névoa de distância (50.0m).
+## Porque: Mantém o entorno imediato do avatar perfeitamente nítido.
+DEFAULT_FOG_BEGIN_METERS: float = 50.0
+
+## @const DEFAULT_FOG_END_METERS (float)
+## O que: Distância máxima padrão em metros para opacidade total da névoa (1200.0m).
+## Porque: Oculta o fim do raio de visão dos chunks de forma suave no horizonte.
+DEFAULT_FOG_END_METERS: float = 1200.0
 
 
 def ue2_rotator_to_direction_vector(pitch: int, yaw: int, roll: int = 0) -> List[float]:
@@ -29,11 +63,8 @@ def ue2_rotator_to_direction_vector(pitch: int, yaw: int, roll: int = 0) -> List
     Converte rotação angular de ator de luz da UE2 (65536 unidades = 360 graus)
     para o vetor unitário 3D de direção de luz que o Godot espera.
     """
-    # Na UE2: Yaw gira no plano horizontal em torno do eixo Z (altura)
-    # Pitch inclina para cima/baixo em torno do eixo Y
-    # 65536 = 2 * PI radianos
-    p_rad = (pitch / 65536.0) * 2.0 * math.pi
-    y_rad = (yaw / 65536.0) * 2.0 * math.pi
+    p_rad = (pitch / UE2_ROTATOR_FULL_CIRCLE) * 2.0 * math.pi
+    y_rad = (yaw / UE2_ROTATOR_FULL_CIRCLE) * 2.0 * math.pi
 
     # Vetor de apontamento na UE2 (X=Frente, Y=Direita, Z=Cima)
     dx_ue = math.cos(p_rad) * math.cos(y_rad)
@@ -53,7 +84,8 @@ def ue2_rotator_to_direction_vector(pitch: int, yaw: int, roll: int = 0) -> List
 
 def extract_map_environment(
     map_pkg: UnrealPackageReader,
-    unit_scale: float = UU_TO_METERS_DEFAULT,
+    unit_scale: float = UU_TO_METERS_CANONICAL,
+    config: Optional[PipelineConfig] = None,
 ) -> Dict[str, Any]:
     """
     Analisa um arquivo .unr e extrai todos os parâmetros de atmosfera, luz solar,
@@ -140,12 +172,11 @@ def extract_map_environment(
 
             # 3. ZoneInfo (Névoa e Luz Ambiente)
             elif c_name == "ZoneInfo":
-                # Fog
                 fog_color = props.get("DistanceFogColor", [180, 200, 220, 255])
                 fog_start = float(props.get("DistanceFogStart", 1000.0)) * unit_scale
                 fog_end = float(props.get("DistanceFogEnd", 80000.0)) * unit_scale
                 if fog_end <= fog_start:
-                    fog_end = 800.0  # Fallback de 800m
+                    fog_end = 800.0
 
                 env_data["distance_fog"] = {
                     "enabled": True,
@@ -158,7 +189,6 @@ def extract_map_environment(
                     "end_meters": round(fog_end, 2),
                 }
 
-                # Luz ambiente
                 amb_color = props.get("AmbientLightColor", [120, 130, 140, 255])
                 env_data["ambient_lighting"] = {
                     "color_rgb": [
@@ -226,13 +256,13 @@ def extract_map_environment(
                     }
                 )
 
-    # Defaults caso algum parâmetro não tenha sido declarado no mapa
+    # Defaults de fallback
     if env_data["sunlight"] is None:
         env_data["sunlight"] = {
             "name": "DefaultSunlight",
             "type": "DirectionalLight3D",
-            "direction": [-0.5, -0.8, -0.3],
-            "color_rgb": [1.0, 0.95, 0.88],
+            "direction": DEFAULT_SUN_DIRECTION,
+            "color_rgb": DEFAULT_SUN_COLOR_RGB,
             "energy": 1.2,
         }
 
@@ -240,8 +270,8 @@ def extract_map_environment(
         env_data["distance_fog"] = {
             "enabled": True,
             "color_rgb": [0.65, 0.75, 0.85],
-            "begin_meters": 50.0,
-            "end_meters": 1200.0,
+            "begin_meters": DEFAULT_FOG_BEGIN_METERS,
+            "end_meters": DEFAULT_FOG_END_METERS,
         }
 
     if env_data["ambient_lighting"] is None:

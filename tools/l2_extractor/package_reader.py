@@ -3,12 +3,17 @@
 """
 tools/l2_extractor/package_reader.py — Leitor e Parser de Pacotes Unreal Engine 2 (.UNR / .UTX / .USX / .U)
 
-Analisa a estrutura interna de pacotes da UE2:
+@description
+Analisa a estrutura binária interna de pacotes da UE2:
 - Tabela de Nomes (ASCII / UTF-16)
 - Tabela de Importações (Hierarquia de pacotes e classes)
 - Tabela de Exportações (Tamanho serializado, offset, flags e outers)
 - Serializador de Propriedades (Structs, Vetores, Rotators, Arrays e Referências)
-- Extração de Paletas e Texturas
+- Extração e decodificação de Paletas, Texturas e Heightmaps G16
+
+@created 2026-08-18
+@updated 2026-08-20
+@author Leonardo S. Badaró
 """
 
 from pathlib import Path
@@ -17,6 +22,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 from PIL import Image
 
+from .config import (
+    PALETTE_ENTRIES_COUNT,
+    TERRAIN_GRID_RESOLUTION,
+    UE2_PACKAGE_TAG,
+)
 from .decryptor import L2Decryptor
 from .texture_decoder import (
     decode_dxt1,
@@ -26,6 +36,56 @@ from .texture_decoder import (
     decode_p8,
     decode_rgba8,
 )
+
+
+# ==============================================================================
+# CONSTANTES SEMÂNTICAS DO PARSER DE PACOTES UE2
+# ==============================================================================
+
+## @const PROP_TYPE_* (int)
+## O que: Identificadores dos tipos primitivos e complexos de propriedades serializadas na UE2.
+## Porque: Cada propriedade no fluxo binário declara seu tipo nos 4 bits menos significativos do info byte.
+PROP_TYPE_BYTE: int = 1
+PROP_TYPE_INT: int = 2
+PROP_TYPE_BOOL: int = 3
+PROP_TYPE_FLOAT: int = 4
+PROP_TYPE_OBJECT: int = 5
+PROP_TYPE_NAME: int = 6
+PROP_TYPE_STRUCT: int = 10
+PROP_TYPE_VECTOR: int = 11
+PROP_TYPE_ROTATOR: int = 12
+PROP_TYPE_STR: int = 13
+
+## @const SIZE_TYPE_* (int)
+## O que: Mapeamento de modos de tamanho de propriedades na UE2.
+## Porque: Bits 4 a 6 do info byte determinam o tamanho do dado (fixo de 1, 2, 4, 12, 16 bytes ou variável).
+SIZE_TYPE_1_BYTE: int = 0
+SIZE_TYPE_2_BYTES: int = 1
+SIZE_TYPE_4_BYTES: int = 2
+SIZE_TYPE_12_BYTES: int = 3
+SIZE_TYPE_16_BYTES: int = 4
+SIZE_TYPE_CUSTOM_BYTE: int = 5
+SIZE_TYPE_CUSTOM_WORD: int = 6
+SIZE_TYPE_CUSTOM_DWORD: int = 7
+
+## @const COMPACT_INDEX_* (int)
+## O que: Constantes de deslocamento e máscaras binárias para decodificação do CompactIndex da UE2.
+## Porque: O CompactIndex codifica inteiros de tamanho variável (1 a 5 bytes) com sinal no primeiro byte.
+COMPACT_INDEX_SIGN_MASK: int = 0x80
+COMPACT_INDEX_MORE_B0_MASK: int = 0x40
+COMPACT_INDEX_VAL_B0_MASK: int = 0x3F
+COMPACT_INDEX_MORE_BN_MASK: int = 0x80
+COMPACT_INDEX_VAL_BN_MASK: int = 0x7F
+
+## @const PALETTE_BYTE_SIZE (int)
+## O que: Tamanho total em bytes da tabela de 256 cores RGBA (1024 bytes = 256 * 4).
+## Porque: Formato clássico de paleta em pacotes UE2 armazena 256 quadrupletos BGRA/RGBA.
+PALETTE_BYTE_SIZE: int = 1024
+
+## @const G16_HEIGHTMAP_RAW_SIZE (int)
+## O que: Tamanho exato em bytes de um heightmap G16 de 256x256 uint16 (131072 bytes = 256 * 256 * 2).
+## Porque: Usado para identificar e validar buffers de terreno brutos nos pacotes de mapa.
+G16_HEIGHTMAP_RAW_SIZE: int = 131072
 
 
 class UnrealPackageReader:
@@ -65,25 +125,25 @@ class UnrealPackageReader:
             self.pos = offset
         b0 = self.data[self.pos]
         self.pos += 1
-        sign = b0 & 0x80
-        more = b0 & 0x40
-        value = b0 & 0x3F
+        sign = b0 & COMPACT_INDEX_SIGN_MASK
+        more = b0 & COMPACT_INDEX_MORE_B0_MASK
+        value = b0 & COMPACT_INDEX_VAL_B0_MASK
 
         if more:
             b1 = self.data[self.pos]
             self.pos += 1
-            more = b1 & 0x80
-            value |= (b1 & 0x7F) << 6
+            more = b1 & COMPACT_INDEX_MORE_BN_MASK
+            value |= (b1 & COMPACT_INDEX_VAL_BN_MASK) << 6
             if more:
                 b2 = self.data[self.pos]
                 self.pos += 1
-                more = b2 & 0x80
-                value |= (b2 & 0x7F) << 13
+                more = b2 & COMPACT_INDEX_MORE_BN_MASK
+                value |= (b2 & COMPACT_INDEX_VAL_BN_MASK) << 13
                 if more:
                     b3 = self.data[self.pos]
                     self.pos += 1
-                    more = b3 & 0x80
-                    value |= (b3 & 0x7F) << 20
+                    more = b3 & COMPACT_INDEX_MORE_BN_MASK
+                    value |= (b3 & COMPACT_INDEX_VAL_BN_MASK) << 20
                     if more:
                         b4 = self.data[self.pos]
                         self.pos += 1
@@ -288,7 +348,7 @@ class UnrealPackageReader:
             is_array = (info_byte >> 7) & 0x01
 
             struct_name = ""
-            if prop_type == 10:  # StructProperty
+            if prop_type == PROP_TYPE_STRUCT:
                 struct_name_idx = self.read_compact_index()
                 struct_name = (
                     self.names[struct_name_idx]
@@ -297,51 +357,51 @@ class UnrealPackageReader:
                 )
 
             size = 0
-            if size_type == 0:
+            if size_type == SIZE_TYPE_1_BYTE:
                 size = 1
-            elif size_type == 1:
+            elif size_type == SIZE_TYPE_2_BYTES:
                 size = 2
-            elif size_type == 2:
+            elif size_type == SIZE_TYPE_4_BYTES:
                 size = 4
-            elif size_type == 3:
+            elif size_type == SIZE_TYPE_12_BYTES:
                 size = 12
-            elif size_type == 4:
+            elif size_type == SIZE_TYPE_16_BYTES:
                 size = 16
-            elif size_type == 5:
+            elif size_type == SIZE_TYPE_CUSTOM_BYTE:
                 size = self.data[self.pos]
                 self.pos += 1
-            elif size_type == 6:
+            elif size_type == SIZE_TYPE_CUSTOM_WORD:
                 size = struct.unpack_from("<H", self.data, self.pos)[0]
                 self.pos += 2
-            elif size_type == 7:
+            elif size_type == SIZE_TYPE_CUSTOM_DWORD:
                 size = struct.unpack_from("<I", self.data, self.pos)[0]
                 self.pos += 4
 
             array_index = 0
-            if is_array and prop_type != 3:
+            if is_array and prop_type != PROP_TYPE_BOOL:
                 array_index = self.read_compact_index()
 
             prop_data_start = self.pos
             val: Any = None
 
-            if prop_type == 1:  # ByteProperty
+            if prop_type == PROP_TYPE_BYTE:
                 if size == 1:
                     val = self.data[self.pos]
                 else:
                     idx = self.read_compact_index()
                     val = self.names[idx] if 0 <= idx < len(self.names) else ""
-            elif prop_type == 2:  # IntProperty
+            elif prop_type == PROP_TYPE_INT:
                 val = struct.unpack_from("<i", self.data, self.pos)[0]
-            elif prop_type == 3:  # BoolProperty
+            elif prop_type == PROP_TYPE_BOOL:
                 val = bool(is_array)
-            elif prop_type == 4:  # FloatProperty
+            elif prop_type == PROP_TYPE_FLOAT:
                 val = struct.unpack_from("<f", self.data, self.pos)[0]
-            elif prop_type == 5:  # ObjectProperty
+            elif prop_type == PROP_TYPE_OBJECT:
                 val = self.resolve_object_reference(self.read_compact_index())
-            elif prop_type == 6:  # NameProperty
+            elif prop_type == PROP_TYPE_NAME:
                 idx = self.read_compact_index()
                 val = self.names[idx] if 0 <= idx < len(self.names) else ""
-            elif prop_type == 10:  # StructProperty
+            elif prop_type == PROP_TYPE_STRUCT:
                 payload_len = prop_data_start + size - self.pos
                 if struct_name == "Vector" and payload_len >= 12:
                     val = struct.unpack_from("<fff", self.data, self.pos)
@@ -367,11 +427,11 @@ class UnrealPackageReader:
                     val = {"Min": min_v, "Max": max_v, "IsValid": is_valid}
                 else:
                     val = self.read_properties(self.pos, payload_len)
-            elif prop_type == 11:  # VectorProperty
+            elif prop_type == PROP_TYPE_VECTOR:
                 val = struct.unpack_from("<fff", self.data, self.pos)
-            elif prop_type == 12:  # RotatorProperty
+            elif prop_type == PROP_TYPE_ROTATOR:
                 val = struct.unpack_from("<iii", self.data, self.pos)
-            elif prop_type == 13:  # StrProperty
+            elif prop_type == PROP_TYPE_STR:
                 s_len = self.read_compact_index()
                 if s_len > 0:
                     val = self.data[self.pos : self.pos + s_len - 1].decode(
@@ -422,10 +482,10 @@ class UnrealPackageReader:
         if not matched:
             return None
         pal_data = self.data[matched["offset"] : matched["offset"] + matched["size"]]
-        if len(pal_data) >= 1024:
-            raw_colors = pal_data[-1024:]
+        if len(pal_data) >= PALETTE_BYTE_SIZE:
+            raw_colors = pal_data[-PALETTE_BYTE_SIZE:]
             palette = []
-            for i in range(0, 1024, 4):
+            for i in range(0, PALETTE_BYTE_SIZE, 4):
                 r, g, b, a = struct.unpack_from("<BBBB", raw_colors, i)
                 palette.append((r, g, b, a))
             return palette
@@ -534,7 +594,7 @@ class UnrealPackageReader:
 
                 # 5. G16 / Heightfield 16-bit
                 g16_sz = rw * rh * 2
-                if format_val == 8 or (rw == 256 and rh == 256 and pos >= 131072):
+                if format_val == 8 or (rw == TERRAIN_GRID_RESOLUTION and rh == TERRAIN_GRID_RESOLUTION and pos >= G16_HEIGHTMAP_RAW_SIZE):
                     if pos >= g16_sz:
                         g16_raw = exp_data[pos - g16_sz : pos]
                         if len(g16_raw) == g16_sz:
@@ -556,7 +616,7 @@ class UnrealPackageReader:
                         if img:
                             return img
 
-                # Fallback DXT1 / DXT5
+                # Fallback DXT1
                 dxt1_sz = (rw * rh) // 2
                 if pos >= dxt1_sz:
                     img = decode_dxt1(exp_data[pos - dxt1_sz : pos], rw, rh)

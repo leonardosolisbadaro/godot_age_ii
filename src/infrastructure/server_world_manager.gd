@@ -6,21 +6,28 @@
 ## matrizes de elevação e validando a física espacial de entidades sem GPU.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-20
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted
 
 const ChunkResourceAdapterClass = preload("res://src/adapters/chunk_resource_adapter.gd")
 const LoadChunkMetadataUseCaseClass = preload("res://src/use_cases/load_chunk_metadata_use_case.gd")
-const LoadServerHeightfieldUseCaseClass = preload("res://src/use_cases/load_server_heightfield_use_case.gd")
-const SampleWorldAltitudeUseCaseClass = preload("res://src/use_cases/sample_world_altitude_use_case.gd")
-const ValidatePlayerMovementUseCaseClass = preload("res://src/use_cases/validate_player_movement_use_case.gd")
+const LoadServerHeightfieldUseCaseClass = preload(
+	"res://src/use_cases/load_server_heightfield_use_case.gd"
+)
+const SampleWorldAltitudeUseCaseClass = preload(
+	"res://src/use_cases/sample_world_altitude_use_case.gd"
+)
+const ValidatePlayerMovementUseCaseClass = preload(
+	"res://src/use_cases/validate_player_movement_use_case.gd"
+)
+const ServerMovementValidatorClass = preload("res://src/domain/server_movement_validator.gd")
 
 var base_maps_path: String = "res://assets/maps"
 
-var _chunks_data: Dictionary = {} # { "16_24": TerrainChunkData, ... }
-var _samplers: Dictionary = {} # { "16_24": HeightfieldSampler, ... }
+var _chunks_data: Dictionary = { } # { "16_24": TerrainChunkData, ... }
+var _samplers: Dictionary = { } # { "16_24": HeightfieldSampler, ... }
 
 var _resource_adapter: RefCounted
 var _meta_use_case: RefCounted
@@ -52,12 +59,33 @@ func load_server_chunk(chunk_name: String) -> bool:
 	return true
 
 
+func load_all_available_chunks() -> Array[String]:
+	var loaded: Array[String] = []
+	var available = _resource_adapter.get_available_chunks()
+	for c_name in available:
+		if load_server_chunk(c_name):
+			loaded.append(c_name)
+	return loaded
+
+
 func get_altitude_at(world_x: float, world_z: float) -> Dictionary:
 	return _altitude_use_case.execute(world_x, world_z, _chunks_data, _samplers)
 
 
-func validate_movement(from_pos: Vector3, to_pos: Vector3, delta_time: float = 0.05, max_speed: float = 6.0) -> Dictionary:
-	return _movement_use_case.execute(from_pos, to_pos, _chunks_data, _samplers, delta_time, max_speed)
+func validate_movement(
+	from_pos: Vector3,
+	to_pos: Vector3,
+	delta_time: float = ServerMovementValidatorClass.DEFAULT_DELTA_TIME,
+	max_speed: float = ServerMovementValidatorClass.DEFAULT_MAX_SPEED,
+) -> Dictionary:
+	return _movement_use_case.execute(
+		from_pos,
+		to_pos,
+		_chunks_data,
+		_samplers,
+		delta_time,
+		max_speed,
+	)
 
 
 func get_loaded_chunks() -> Array:
@@ -67,7 +95,10 @@ func get_loaded_chunks() -> Array:
 func find_sampler_at(world_x: float, world_z: float) -> RefCounted:
 	for c_name in _chunks_data.keys():
 		var chunk = _chunks_data[c_name]
-		if chunk and chunk.has_method("contains_world_point") and chunk.contains_world_point(world_x, world_z):
+		if (
+			chunk and chunk.has_method("contains_world_point")
+			and chunk.contains_world_point(world_x, world_z)
+		):
 			return _samplers.get(c_name, null)
 	return null
 
@@ -75,6 +106,9 @@ func find_sampler_at(world_x: float, world_z: float) -> RefCounted:
 func get_chunk_name_at(world_x: float, world_z: float) -> String:
 	for c_name in _chunks_data.keys():
 		var chunk = _chunks_data[c_name]
-		if chunk and chunk.has_method("contains_world_point") and chunk.contains_world_point(world_x, world_z):
+		if (
+			chunk and chunk.has_method("contains_world_point")
+			and chunk.contains_world_point(world_x, world_z)
+		):
 			return c_name
 	return ""

@@ -3,29 +3,45 @@
 """
 tools/l2_extractor/environment.py — Descoberta de Ambiente e Gerenciamento de Pacotes L2
 
-Varre a árvore de diretórios do Lineage II (textures, systextures, maps, staticmeshes)
-e fornece cache sob demanda de instâncias de UnrealPackageReader.
+@description
+Gerencia a indexação e resolução sob demanda de pacotes de assets do Lineage II (.UNR, .UTX, .USX).
+Utiliza injeção de dependências (PipelineConfig) e opera estritamente dentro da raiz do projeto,
+eliminando qualquer busca ou fallback em diretórios arbitrários do sistema operacional.
+
+@created 2026-08-18
+@updated 2026-08-20
+@author Leonardo S. Badaró
 """
 
-import os
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
+from .config import PipelineConfig
 from .package_reader import UnrealPackageReader
 
 
 class L2Environment:
     """Gerenciador de ambiente e resolução de pacotes de assets do Lineage II."""
 
-    DEFAULT_L2_PATHS = [
-        Path("C:/Users/LEONARDO/Documents/Lineage II"),
-        Path("C:/Lineage II"),
-        Path("D:/Lineage II"),
-    ]
-
-    def __init__(self, target_file: Optional[Union[str, Path]] = None, l2_root: Optional[Union[str, Path]] = None):
+    def __init__(
+        self,
+        config: Optional[PipelineConfig] = None,
+        target_file: Optional[Union[str, Path]] = None,
+        l2_root: Optional[Union[str, Path]] = None,
+    ):
+        self.config = config or PipelineConfig()
         self.target_file = Path(target_file).resolve() if target_file else None
-        self.l2_root = self._resolve_l2_root(Path(l2_root) if l2_root else None)
+
+        # Prioridade de resolução de raiz L2:
+        # 1. Argumento explícito l2_root
+        # 2. Caminho inferido do target_file
+        # 3. Configuração do Pipeline (Lineage II/ na raiz do projeto)
+        if l2_root is not None:
+            self.l2_root = Path(l2_root).resolve()
+        elif self.target_file is not None and self._is_inside_l2_tree(self.target_file):
+            self.l2_root = self._infer_l2_root_from_file(self.target_file)
+        else:
+            self.l2_root = self.config.l2_root_dir
 
         self.textures_dir = self.l2_root / "textures" if self.l2_root else None
         self.systextures_dir = self.l2_root / "systextures" if self.l2_root else None
@@ -39,24 +55,23 @@ class L2Environment:
 
         self._index_all_packages()
 
-    def _resolve_l2_root(self, explicit_root: Optional[Path]) -> Optional[Path]:
-        if explicit_root and explicit_root.is_dir():
-            return explicit_root.resolve()
+    @staticmethod
+    def _is_inside_l2_tree(filepath: Path) -> bool:
+        parent = filepath.parent
+        return parent.name.lower() in ("maps", "textures", "staticmeshes", "systextures")
 
-        if self.target_file:
-            cand = self.target_file.parent
-            if cand.name.lower() in ("maps", "textures", "staticmeshes", "systextures") and cand.parent.is_dir():
-                return cand.parent.resolve()
-            if (self.target_file.parent / "textures").is_dir():
-                return self.target_file.parent.resolve()
-
-        for def_path in self.DEFAULT_L2_PATHS:
-            if def_path.is_dir() and (def_path / "maps").is_dir():
-                return def_path.resolve()
-
-        return None
+    @staticmethod
+    def _infer_l2_root_from_file(filepath: Path) -> Path:
+        parent = filepath.parent
+        if parent.name.lower() in ("maps", "textures", "staticmeshes", "systextures") and parent.parent.is_dir():
+            return parent.parent.resolve()
+        return parent.resolve()
 
     def _index_all_packages(self) -> None:
+        """Varre e indexa os pacotes disponíveis nos diretórios canônicos do Lineage II."""
+        if not self.l2_root or not self.l2_root.is_dir():
+            return
+
         search_dirs = [
             self.textures_dir,
             self.systextures_dir,

@@ -2,28 +2,30 @@
 ## @path res://src/use_cases/load_server_heightfield_use_case.gd
 ##
 ## @description
-## Caso de uso para carregar os artefatos de física de servidor (heightfield.bin e chunk_meta.json)
-## e instanciar a entidade de domínio HeightfieldSampler.
+## Caso de uso para carregar o buffer binário de elevação de um chunk e instanciar
+## o amostrador matemático HeightfieldSampler para simulação física no servidor.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-20
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted
 
-const ChunkResourceAdapterClass = preload("res://src/adapters/chunk_resource_adapter.gd")
 const HeightfieldSamplerClass = preload("res://src/domain/heightfield_sampler.gd")
-const LoadChunkMetadataUseCaseClass = preload("res://src/use_cases/load_chunk_metadata_use_case.gd")
+const TerrainChunkDataClass = preload("res://src/domain/terrain_chunk_data.gd")
+const ChunkResourceAdapterClass = preload("res://src/adapters/chunk_resource_adapter.gd")
 
 
 func execute(chunk_name: String, adapter: ChunkResourceAdapterClass) -> RefCounted:
 	if not adapter:
 		return null
 
-	var meta_use_case = LoadChunkMetadataUseCaseClass.new()
-	var chunk_data = meta_use_case.execute(chunk_name, adapter, true)
-	if not chunk_data:
+	var meta_dict = adapter.load_chunk_meta_dict(chunk_name, true)
+	if meta_dict.is_empty():
 		return null
+
+	var chunk_data = TerrainChunkDataClass.new()
+	chunk_data.from_meta_dictionary(meta_dict)
 
 	var raw_bytes = adapter.load_heightfield_bytes(chunk_name)
 	if raw_bytes.is_empty():

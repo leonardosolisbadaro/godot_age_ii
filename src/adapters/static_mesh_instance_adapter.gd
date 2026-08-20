@@ -6,7 +6,7 @@
 ## otimizados de MultiMeshInstance3D para renderização em lote de alta performance.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-20
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted
@@ -25,7 +25,7 @@ func parse_actor_dictionaries(actors_raw: Array) -> Array:
 
 
 func group_by_mesh_path(instances: Array) -> Dictionary:
-	var groups: Dictionary = {}
+	var groups: Dictionary = { }
 	for inst in instances:
 		if not (inst is StaticMeshInstanceDataClass):
 			continue

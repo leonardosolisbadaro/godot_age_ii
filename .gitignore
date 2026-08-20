@@ -28,9 +28,11 @@ Thumbs.db
 /submodules/
 
 # Others
-/GodotEngine_extracted/
 /draft/
+/GodotEngine_extracted/
 /test_output_textures/
 /test_output_meshes/
 /UmodelExport/
 /assets/
+/Lineage II/
+/umodel_win32/

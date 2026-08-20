@@ -3,6 +3,7 @@
 """
 tools/build_environment.py — Compilador de Atmosfera, Materiais e Iluminação (Etapa 1.4)
 
+@description
 Extrai e gera:
 1. environment_recipe.json (Cliente / Godot 4):
    - Direção e cor da luz solar (DirectionalLight3D)
@@ -16,18 +17,19 @@ Extrai e gera:
 3. Texturas e Materiais (assets/textures/ e material_recipes.json):
    - Resolução da árvore de materiais (Shader, FinalBlend, TexPanner)
    - Extração automática de PNGs e geração de receitas StandardMaterial3D do Godot 4
+Inclui validação rigorosa de pré-requisitos antes da execução.
 
-Uso:
-    python tools/build_environment.py 16_24
-    python tools/build_environment.py 16_24 16_25
-    python tools/build_environment.py --extract-materials speaking_tree_t
+@created 2026-08-18
+@updated 2026-08-20
+@author Leonardo S. Badaró
 """
 
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
+import sys
+import time
 from typing import Any, Dict, List, Optional
 
 # Força UTF-8 no stdout/stderr no Windows
@@ -39,14 +41,17 @@ if sys.platform == "win32":
         pass
 
 # Adiciona a raiz do projeto ao path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.l2_extractor import (
     L2Environment,
-    UnrealPackageReader,
     MaterialTreeResolver,
+    PipelineConfig,
+    UU_TO_METERS_CANONICAL,
+    UnrealPackageReader,
     extract_map_environment,
-    UU_TO_METERS_DEFAULT,
+    validate_pipeline_environment,
 )
 
 
@@ -55,7 +60,8 @@ def process_map_environment(
     env: L2Environment,
     maps_dir: Path,
     textures_dir: Path,
-    unit_scale: float = UU_TO_METERS_DEFAULT,
+    unit_scale: float = UU_TO_METERS_CANONICAL,
+    config: Optional[PipelineConfig] = None,
 ) -> Dict[str, Any]:
     """Processa toda a atmosfera, iluminação, água e materiais de um mapa .unr."""
     inp_path = Path(map_name_or_path)
@@ -67,15 +73,17 @@ def process_map_environment(
         map_path = env.available_unr.get(clean_name)
 
     if not map_path or not map_path.is_file():
-        print(f"[ERRO] Mapa .unr não encontrado: {map_name_or_path}")
+        print(f"[ERRO] Mapa .unr não encontrado: {map_name_or_path}", file=sys.stderr)
         return {}
 
     map_pkg = UnrealPackageReader(map_path)
     print(f"\n[+] Chunk {clean_name}: Extraindo parâmetros ambientais e iluminação...")
-    env_data = extract_map_environment(map_pkg, unit_scale)
+    env_data = extract_map_environment(map_pkg, unit_scale, config=config)
 
-    chunk_client_dir = maps_dir / clean_name / "client"
-    chunk_server_dir = maps_dir / clean_name / "server"
+    chunk_root = maps_dir / clean_name
+    chunk_client_dir = chunk_root / "client"
+    chunk_server_dir = chunk_root / "server"
+    chunk_root.mkdir(parents=True, exist_ok=True)
     chunk_client_dir.mkdir(parents=True, exist_ok=True)
     chunk_server_dir.mkdir(parents=True, exist_ok=True)
 
@@ -106,8 +114,10 @@ def process_map_environment(
     print(f"    -> Salvo física de água do servidor em: {server_water_file.name}")
 
     # 3. Resolve materiais referenciados pelos atores do mapa
-    resolver = MaterialTreeResolver(env, textures_out_dir=textures_dir)
-    actors_json = chunk_client_dir / "chunk_static_actors.json"
+    resolver = MaterialTreeResolver(env, textures_out_dir=textures_dir, config=config)
+    actors_json = chunk_root / "chunk_static_actors.json"
+    if not actors_json.is_file():
+        actors_json = chunk_client_dir / "chunk_static_actors.json"
     resolved_materials = {}
 
     if actors_json.is_file():
@@ -140,7 +150,18 @@ def process_map_environment(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compilador de Atmosfera, Iluminação e Materiais (Lineage II -> Godotage II)"
+        description=(
+            "GODOTAGE II — Compilador de Atmosfera, Iluminação e Materiais (Lineage II -> Godotage II)\n\n"
+            "Gera a receita de iluminação solar, névoa, luzes pontuais e volumes de água para o Godot 4.7,\n"
+            "além de resolver a árvore de materiais e shaders para o manifesto do chunk."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Exemplos de uso:\n"
+            "  python tools/build_environment.py 16_24\n"
+            "  python tools/build_environment.py 16_24 16_25\n"
+            "  python tools/build_environment.py --extract-materials speaking_tree_t\n"
+        ),
     )
     parser.add_argument(
         "maps",
@@ -155,15 +176,19 @@ def main():
     parser.add_argument(
         "--l2-root",
         default=None,
-        help="Caminho raiz de instalação do Lineage II",
+        help="Caminho raiz personalizado de instalação do Lineage II (padrão: Lineage II/ na raiz)",
     )
 
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parent.parent
-    maps_dir = project_root / "assets" / "maps"
-    textures_dir = project_root / "assets" / "textures"
-    env = L2Environment(l2_root=args.l2_root)
+    config = PipelineConfig(
+        l2_root_dir=Path(args.l2_root) if args.l2_root else None,
+    )
+    validate_pipeline_environment(config, require_l2_root=True, require_umodel=False, abort_on_error=True)
+
+    maps_dir = config.maps_output_dir
+    textures_dir = config.textures_output_dir
+    env = L2Environment(config=config, l2_root=config.l2_root_dir)
 
     print("=" * 80)
     print(" [*] GODOTAGE II — COMPILADOR DE ATMOSFERA E MATERIAIS (ETAPA 1.4)")
@@ -176,13 +201,13 @@ def main():
         print(f"\n[+] Resolvendo e extraindo materiais do pacote: {pkg_name}.utx...")
         pkg = env.get_package(pkg_name)
         if not pkg:
-            print(f"[ERRO] Pacote {pkg_name} não encontrado.")
+            print(f"[ERRO] Pacote {pkg_name} não encontrado.", file=sys.stderr)
             return
-        resolver = MaterialTreeResolver(env, textures_out_dir=textures_dir)
+        resolver = MaterialTreeResolver(env, textures_out_dir=textures_dir, config=config)
         count = 0
         for exp in pkg.exports:
             if exp["class_name"] in ("Texture", "Shader", "FinalBlend", "TexPanner"):
-                res = resolver.resolve_material(pkg_name, exp["object_name"])
+                resolver.resolve_material(pkg_name, exp["object_name"])
                 count += 1
         print(f"[OK] {count} materiais resolvidos e texturas salvas em: {textures_dir / pkg_name}")
         return
@@ -190,11 +215,13 @@ def main():
     if not args.maps:
         args.maps = ["16_24"]
 
+    start_time = time.time()
     for m in args.maps:
-        process_map_environment(m, env, maps_dir, textures_dir)
+        process_map_environment(m, env, maps_dir, textures_dir, config=config)
 
+    elapsed = time.time() - start_time
     print("\n" + "=" * 80)
-    print(" [*] Compilação de Atmosfera e Materiais Concluída com Sucesso!")
+    print(f" [*] Compilação de Atmosfera e Materiais Concluída com Sucesso em {elapsed:.2f}s!")
     print("=" * 80 + "\n")
 
 

@@ -3,6 +3,7 @@
 """
 tools/l2_extractor/material_builder.py — Resolvedor de Árvore de Materiais UE2 para Godot 4
 
+@description
 Responsabilidades:
 1. Navegação recursiva na árvore de materiais da Unreal Engine 2.5:
    - Shader: Diffuse, Specular, SpecularMask, Opacity.
@@ -11,25 +12,71 @@ Responsabilidades:
    - ColorModifier: Multiplicadores de cor e matiz.
 2. Extração automática de texturas PNG associadas em assets/textures/<pacote>/<nome>.png.
 3. Geração de receitas de materiais para Godot 4 (StandardMaterial3D e ShaderMaterial).
+Opera com injeção de dependências sem qualquer fallback em diretórios fora da raiz do projeto.
+
+@created 2026-08-18
+@updated 2026-08-20
+@author Leonardo S. Badaró
 """
 
 import json
 import os
-import struct
 from pathlib import Path
+import struct
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from PIL import Image
 
-from .package_reader import UnrealPackageReader
+from .config import PipelineConfig
 from .environment import L2Environment
+from .package_reader import UnrealPackageReader
+
+
+# ==============================================================================
+# CONSTANTES SEMÂNTICAS DE MATERIAIS
+# ==============================================================================
+
+## @const FRAMEBUFFER_BLEND_* (int)
+## O que: Modos de blending de buffer de quadro na UE2.
+## Porque: Mapeados para modos de transparência e mesclagem do StandardMaterial3D do Godot 4.
+FB_BLEND_OVERWRITE: int = 0
+FB_BLEND_MODULATED: int = 1
+FB_BLEND_ALPHABLEND: int = 2
+FB_BLEND_ALPHAMODULATE: int = 3
+FB_BLEND_TRANSLUCENT: int = 4
+
+## @const DEFAULT_ALPHA_SCISSOR_THRESHOLD (float)
+## O que: Limiar padrão de corte de alfa para Alpha Scissor / Alpha Test (0.5).
+## Porque: Valor canônico clássico para folhagens e grades em motores 3D.
+DEFAULT_ALPHA_SCISSOR_THRESHOLD: float = 0.5
+
+
+def to_godot_res_path(path: Optional[Path]) -> Optional[str]:
+    """Converte um Path do sistema operacional para o caminho canônico do Godot res://assets/..."""
+    if not path:
+        return None
+    posix = Path(path).as_posix()
+    if "assets/" in posix:
+        idx = posix.index("assets/")
+        return "res://" + posix[idx:]
+    return "res://" + posix
 
 
 class MaterialTreeResolver:
     """Resolve árvores de nós de materiais e shaders do Lineage II para materiais do Godot 4."""
 
-    def __init__(self, env: L2Environment, textures_out_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        env: L2Environment,
+        textures_out_dir: Optional[Path] = None,
+        config: Optional[PipelineConfig] = None,
+    ):
+        self.config = config or PipelineConfig()
         self.env = env
-        self.textures_out_dir = textures_out_dir or Path("assets/textures")
+        self.textures_out_dir = (
+            Path(textures_out_dir).resolve()
+            if textures_out_dir
+            else self.config.textures_output_dir
+        )
         self._material_cache: Dict[str, Dict[str, Any]] = {}
 
     def _resolve_object_ref(
@@ -71,18 +118,17 @@ class MaterialTreeResolver:
         material_name: str,
         visited: Optional[Set[str]] = None,
     ) -> Dict[str, Any]:
-        """
-        Analisa recursivamente o nó de material (Shader, FinalBlend, Texture, etc.)
-        e retorna uma estrutura padronizada para o Godot 4.
-        """
+        """Navega recursivamente e resolve propriedades completas de um material."""
+        if visited is None:
+            visited = set()
+
         cache_key = f"{pkg_name.lower()}.{material_name.lower()}"
         if cache_key in self._material_cache:
             return self._material_cache[cache_key]
 
-        if visited is None:
-            visited = set()
         if cache_key in visited:
-            return {"name": material_name, "class": "Texture", "package": pkg_name}
+            return {"name": material_name, "package": pkg_name, "class": "RecursionGuard"}
+
         visited.add(cache_key)
 
         pkg = self.env.get_package(pkg_name)
@@ -90,8 +136,9 @@ class MaterialTreeResolver:
             return {
                 "name": material_name,
                 "package": pkg_name,
-                "class": "Unknown",
                 "diffuse_texture": None,
+                "alpha_blend_mode": "Opaque",
+                "two_sided": False,
             }
 
         exp = next(
@@ -102,8 +149,9 @@ class MaterialTreeResolver:
             return {
                 "name": material_name,
                 "package": pkg_name,
-                "class": "Unknown",
                 "diffuse_texture": None,
+                "alpha_blend_mode": "Opaque",
+                "two_sided": False,
             }
 
         class_name = exp["class_name"]
@@ -119,16 +167,14 @@ class MaterialTreeResolver:
             "specular_texture": None,
             "two_sided": False,
             "alpha_blend_mode": "Opaque",
-            "alpha_test_threshold": 0.5,
+            "alpha_test_threshold": DEFAULT_ALPHA_SCISSOR_THRESHOLD,
             "uv_animation": None,
             "color_multiplier": [1.0, 1.0, 1.0, 1.0],
         }
 
         if class_name == "Texture":
-            # Extrai imagem PNG
             png_path = self.extract_and_save_texture(pkg, material_name)
-            result["diffuse_texture"] = str(png_path.as_posix()) if png_path else None
-            # Verifica se possui canal Alpha ativo
+            result["diffuse_texture"] = to_godot_res_path(png_path)
             fmt = props.get("Format")
             if fmt in ("DXT3", "DXT5", "RGBA8"):
                 result["alpha_blend_mode"] = "AlphaTest"
@@ -137,15 +183,8 @@ class MaterialTreeResolver:
         elif class_name == "Shader":
             result["two_sided"] = bool(props.get("TwoSided", False))
 
-            # 1. Tenta carregar .mat pré-exportado pelo UModel se existir
-            umodel_mat = self.textures_out_dir.parent.parent / "UmodelExport" / pkg_name.lower() / "Shader" / f"{material_name}.mat"
-            if not umodel_mat.is_file():
-                # Tenta caminhos alternativos de UmodelExport
-                for alt_root in [Path("UmodelExport"), Path(r"C:\Users\LEONARDO\Downloads\Compressed\umodel_win32\UmodelExport")]:
-                    cand_mat = alt_root / pkg_name.lower() / "Shader" / f"{material_name}.mat"
-                    if cand_mat.is_file():
-                        umodel_mat = cand_mat
-                        break
+            # 1. Carrega manifesto .mat do UModel se exportado previamente
+            umodel_mat = self.config.umodel_export_dir / pkg_name.lower() / "Shader" / f"{material_name}.mat"
 
             if umodel_mat.is_file():
                 mat_text = umodel_mat.read_text(encoding="utf-8", errors="ignore")
@@ -171,7 +210,7 @@ class MaterialTreeResolver:
                     sub_res_spec = self.resolve_material(pkg_name, spec_name, visited)
                     result["specular_texture"] = sub_res_spec.get("diffuse_texture")
             else:
-                # 2. Fallback: Se o nome do Shader termina com _1 (ex: Leaf21_1 -> leaf21), resolve o nome base
+                # Fallback: Se o nome do Shader termina com _1 (ex: Leaf21_1 -> leaf21), resolve o nome base
                 base_cand = material_name
                 if "_" in base_cand:
                     base_cand = base_cand.rsplit("_", 1)[0]
@@ -218,13 +257,12 @@ class MaterialTreeResolver:
                     result["specular_texture"] = sub_res.get("diffuse_texture")
 
         elif class_name == "FinalBlend":
-            frame_blend = props.get("FrameBufferBlending", 0)
-            # 0=FB_Overwrite, 1=FB_Modulated, 2=FB_AlphaBlend, 3=FB_AlphaModulate, 4=FB_Translucent
-            if frame_blend == 2:
+            frame_blend = props.get("FrameBufferBlending", FB_BLEND_OVERWRITE)
+            if frame_blend == FB_BLEND_ALPHABLEND:
                 result["alpha_blend_mode"] = "AlphaBlend"
-            elif frame_blend == 4:
+            elif frame_blend == FB_BLEND_TRANSLUCENT:
                 result["alpha_blend_mode"] = "Additive"
-            elif frame_blend == 1:
+            elif frame_blend == FB_BLEND_MODULATED:
                 result["alpha_blend_mode"] = "Modulated"
 
             if props.get("ZWrite", True) is False:
@@ -326,7 +364,7 @@ class MaterialTreeResolver:
 
         if blend_mode == "AlphaTest":
             lines.append("transparency = 2")  # Alpha Scissor
-            lines.append(f"alpha_scissor_threshold = {material_info.get('alpha_test_threshold', 0.5)}")
+            lines.append(f"alpha_scissor_threshold = {material_info.get('alpha_test_threshold', DEFAULT_ALPHA_SCISSOR_THRESHOLD)}")
         elif blend_mode == "AlphaBlend":
             lines.append("transparency = 1")  # Alpha Blend
         elif blend_mode == "Additive":
@@ -336,7 +374,6 @@ class MaterialTreeResolver:
             lines.append(f"albedo_color = Color({color[0]:.4f}, {color[1]:.4f}, {color[2]:.4f}, {color[3]:.4f})")
 
         if diffuse_path:
-            # Caminho relativo para res://
             rel_path = Path(diffuse_path).as_posix()
             lines.append(f'albedo_texture = ExtResource("res://{rel_path}")')
 

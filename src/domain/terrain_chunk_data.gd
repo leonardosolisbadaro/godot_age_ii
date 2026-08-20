@@ -6,23 +6,46 @@
 ## e metadados de elevação de um chunk de terreno no mundo (Lineage II / Godotage II).
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-20
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted
+
+# ==============================================================================
+# CONSTANTES SEMÂNTICAS DE CHUNK
+# ==============================================================================
+
+## @const DEFAULT_GRID_RESOLUTION (int)
+## O que: Resolução padrão de vértices por eixo na grade de terreno do Lineage II (256x256).
+## Porque: Resolução padrão de heightmaps G16 da UE2.
+const DEFAULT_GRID_RESOLUTION: int = 256
+
+## @const DEFAULT_CHUNK_DIMENSIONS_METERS (float)
+## O que: Dimensão métrica padrão de largura e profundidade de 1 chunk completo (2621.44m).
+## Porque: 256 células * 128 UU de escala * 0.08m/UU = 2621.44m.
+const DEFAULT_CHUNK_DIMENSIONS_METERS: float = 2621.44
+
+## @const DEFAULT_CELL_SIZE_METERS (float)
+## O que: Espaçamento métrico padrão entre vértices consecutivos (10.24m).
+## Porque: 2621.44m / 256 = 10.24m.
+const DEFAULT_CELL_SIZE_METERS: float = 10.24
+
+# ==============================================================================
+# PROPRIEDADES DA ENTIDADE
+# ==============================================================================
 
 var chunk_name: String = ""
 var chunk_x: int = 0
 var chunk_y: int = 0
 
-var grid_width: int = 256
-var grid_depth: int = 256
+var grid_width: int = DEFAULT_GRID_RESOLUTION
+var grid_depth: int = DEFAULT_GRID_RESOLUTION
 
-var cell_size_x: float = 2.438
-var cell_size_z: float = 2.438
+var cell_size_x: float = DEFAULT_CELL_SIZE_METERS
+var cell_size_z: float = DEFAULT_CELL_SIZE_METERS
 
-var total_width_meters: float = 624.15
-var total_depth_meters: float = 624.15
+var total_width_meters: float = DEFAULT_CHUNK_DIMENSIONS_METERS
+var total_depth_meters: float = DEFAULT_CHUNK_DIMENSIONS_METERS
 
 var world_origin: Vector3 = Vector3.ZERO
 var min_altitude: float = 0.0
@@ -34,8 +57,8 @@ func _init(
 	p_x: int = 0,
 	p_y: int = 0,
 	p_origin: Vector3 = Vector3.ZERO,
-	p_width: float = 624.15,
-	p_depth: float = 624.15
+	p_width: float = DEFAULT_CHUNK_DIMENSIONS_METERS,
+	p_depth: float = DEFAULT_CHUNK_DIMENSIONS_METERS,
 ) -> void:
 	chunk_name = p_name
 	chunk_x = p_x
@@ -78,7 +101,7 @@ func from_meta_dictionary(dict: Dictionary) -> void:
 	if orig.size() >= 3:
 		world_origin = Vector3(float(orig[0]), float(orig[1]), float(orig[2]))
 
-	var alt = dict.get("altitude_meters", {})
+	var alt = dict.get("altitude_meters", { })
 	min_altitude = float(alt.get("min", min_altitude))
 	max_altitude = float(alt.get("max", max_altitude))
 
@@ -87,8 +110,8 @@ func contains_world_point(world_x: float, world_z: float) -> bool:
 	var half_w = total_width_meters / 2.0
 	var half_d = total_depth_meters / 2.0
 	return (
-		world_x >= (world_origin.x - half_w) and world_x <= (world_origin.x + half_w) and
-		world_z >= (world_origin.z - half_d) and world_z <= (world_origin.z + half_d)
+		world_x >= (world_origin.x - half_w) and world_x <= (world_origin.x + half_w)
+		and world_z >= (world_origin.z - half_d) and world_z <= (world_origin.z + half_d)
 	)
 
 
@@ -97,16 +120,5 @@ func get_local_coordinates(world_x: float, world_z: float) -> Vector2:
 	var half_d = total_depth_meters / 2.0
 	return Vector2(
 		world_x - (world_origin.x - half_w),
-		world_z - (world_origin.z - half_d)
-	)
-
-
-func get_world_bounds_2d() -> Rect2:
-	var half_w = total_width_meters / 2.0
-	var half_d = total_depth_meters / 2.0
-	return Rect2(
-		world_origin.x - half_w,
-		world_origin.z - half_d,
-		total_width_meters,
-		total_depth_meters
+		world_z - (world_origin.z - half_d),
 	)

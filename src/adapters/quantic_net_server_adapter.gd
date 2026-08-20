@@ -2,44 +2,62 @@
 ## @path res://src/adapters/quantic_net_server_adapter.gd
 ##
 ## @description
-## Adaptador de interface que traduz eventos e dados do plugin de rede QuanticNet
-## para o domínio autoritativo do servidor de jogo de forma totalmente agnóstica.
+## Adaptador de interface para gerenciamento de sessões de jogadores conectados
+## e abstração da API de rede QuanticNet.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-20
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted
 
-var _active_peers: Dictionary = {} # { peer_id: { "position": Vector3, "rotation": Vector3, "last_seq": int } }
+var _peers: Dictionary = { } # { peer_id: { "position": Vector3, "rotation": Vector3, "last_seq": int, ... } }
 
 
-func register_peer(peer_id: int, initial_pos: Vector3, initial_rot: Vector3 = Vector3.ZERO) -> void:
-	_active_peers[peer_id] = {
-		"position": initial_pos,
-		"rotation": initial_rot,
-		"last_seq": 0
-	}
+func register_peer(peer_id: int, spawn_pos: Vector3 = Vector3.ZERO) -> void:
+	if not _peers.has(peer_id):
+		_peers[peer_id] = {
+			"peer_id": peer_id,
+			"position": spawn_pos,
+			"rotation": Vector3.ZERO,
+			"last_seq": 0,
+			"connected_at": Time.get_ticks_msec(),
+		}
 
 
 func unregister_peer(peer_id: int) -> void:
-	_active_peers.erase(peer_id)
+	_peers.erase(peer_id)
 
 
 func has_peer(peer_id: int) -> bool:
-	return _active_peers.has(peer_id)
+	return _peers.has(peer_id)
+
+
+func is_peer_registered(peer_id: int) -> bool:
+	return _peers.has(peer_id)
+
+
+func get_peer_count() -> int:
+	return _peers.size()
+
+
+func update_peer_state(
+	peer_id: int,
+	pos_or_dict: Variant,
+	rot: Vector3 = Vector3.ZERO,
+	seq: int = 0,
+) -> void:
+	if not _peers.has(peer_id):
+		return
+
+	if pos_or_dict is Dictionary:
+		for k in pos_or_dict.keys():
+			_peers[peer_id][k] = pos_or_dict[k]
+	elif pos_or_dict is Vector3:
+		_peers[peer_id]["position"] = pos_or_dict
+		_peers[peer_id]["rotation"] = rot
+		_peers[peer_id]["last_seq"] = seq
 
 
 func get_peer_state(peer_id: int) -> Dictionary:
-	return _active_peers.get(peer_id, {})
-
-
-func update_peer_state(peer_id: int, pos: Vector3, rot: Vector3, seq: int = 0) -> void:
-	if _active_peers.has(peer_id):
-		_active_peers[peer_id]["position"] = pos
-		_active_peers[peer_id]["rotation"] = rot
-		_active_peers[peer_id]["last_seq"] = seq
-
-
-func get_active_peers() -> Dictionary:
-	return _active_peers.duplicate(true)
+	return _peers.get(peer_id, { })

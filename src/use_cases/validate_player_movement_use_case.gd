@@ -6,7 +6,7 @@
 ## integrando amostragem de terreno multi-chunk e prevenção de speedhack/teleporte.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-20
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted
@@ -19,9 +19,9 @@ func execute(
 	to_pos: Vector3,
 	chunks_data: Dictionary,
 	samplers: Dictionary,
-	delta_time: float = 0.05,
-	max_speed: float = 6.0,
-	max_slope_ratio: float = 1.5
+	delta_time: float = ServerMovementValidatorClass.DEFAULT_DELTA_TIME,
+	max_speed: float = ServerMovementValidatorClass.DEFAULT_MAX_SPEED,
+	max_slope_ratio: float = ServerMovementValidatorClass.DEFAULT_MAX_SLOPE_RATIO,
 ) -> Dictionary:
 	var validator = ServerMovementValidatorClass.new()
 
@@ -29,7 +29,10 @@ func execute(
 	var active_sampler = null
 	for c_name in chunks_data.keys():
 		var chunk = chunks_data[c_name]
-		if chunk and chunk.has_method("contains_world_point") and chunk.contains_world_point(to_pos.x, to_pos.z):
+		if (
+			chunk and chunk.has_method("contains_world_point")
+			and chunk.contains_world_point(to_pos.x, to_pos.z)
+		):
 			active_sampler = samplers.get(c_name, null)
 			break
 
@@ -40,5 +43,5 @@ func execute(
 		null,
 		delta_time,
 		max_speed,
-		max_slope_ratio
+		max_slope_ratio,
 	)

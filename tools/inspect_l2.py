@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-tools/inspect_l2.py — Utilitário Visual e Interativo de Inspeção do Lineage II
+tools/inspect_l2.py — Utilitário de Inspeção de Pacotes RAW do Lineage II
 
-Permite inspecionar pacotes .unr, .utx e .usx e extrair texturas de teste diretamente
-para uma pasta sem necessidade de comandos complexos no PowerShell.
+@description
+Permite inspecionar pacotes .unr, .utx e .usx diretamente dos dados RAW do Lineage II,
+verificando cabeçalhos UE2, tabelas de exportação/importação e extraindo amostras de textura.
 
-Uso:
-    python tools/inspect_l2.py
-    python tools/inspect_l2.py --map 16_24
-    python tools/inspect_l2.py --extract-textures t_16_24 --limit 10
+@created 2026-08-18
+@updated 2026-08-20
+@author Leonardo S. Badaró
 """
 
 import argparse
@@ -26,24 +26,72 @@ if sys.platform == "win32":
         pass
 
 # Adiciona a raiz do projeto ao path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.l2_extractor import L2Environment, UnrealPackageReader
+from tools.l2_extractor import (
+    L2Environment,
+    PipelineConfig,
+    UE2_PACKAGE_TAG,
+    UnrealPackageReader,
+    validate_pipeline_environment,
+)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Inspetor e Extrator de Teste Lineage II")
-    parser.add_argument("--map", default="16_24", help="Nome do mapa para inspecionar (padrão: 16_24)")
-    parser.add_argument("--extract-textures", default="t_16_24", help="Nome do pacote .utx para extrair amostras PNG (padrão: t_16_24)")
-    parser.add_argument("--limit", type=int, default=5, help="Número de texturas para extrair (padrão: 5)")
-    parser.add_argument("--out-dir", default="test_output_textures", help="Pasta de saída das texturas (padrão: test_output_textures)")
+    parser = argparse.ArgumentParser(
+        description=(
+            "GODOTAGE II — Inspetor de Pacotes RAW do Lineage II (.UNR / .UTX / .USX)\n\n"
+            "Inspeciona a estrutura interna de arquivos da Unreal Engine 2 e permite\n"
+            "extrair amostras pontuais de texturas decodificadas."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Exemplos de uso:\n"
+            "  python tools/inspect_l2.py --map 16_24\n"
+            "  python tools/inspect_l2.py --extract-textures t_16_24 --limit 5\n"
+            "  python tools/inspect_l2.py --l2-root \"./Lineage II\"\n"
+        ),
+    )
+    parser.add_argument(
+        "--map",
+        default="16_24",
+        help="Nome do mapa para inspecionar (padrão: 16_24)",
+    )
+    parser.add_argument(
+        "--extract-textures",
+        default=None,
+        help="Nome do pacote .utx para extrair amostras PNG (ex: t_16_24)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Quantidade máxima de texturas a extrair (padrão: 5)",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help="Pasta de saída das texturas de amostra (padrão: assets/textures/amostras)",
+    )
+    parser.add_argument(
+        "--l2-root",
+        default=None,
+        help="Caminho raiz personalizado de instalação do Lineage II (padrão: Lineage II/ na raiz)",
+    )
+
     args = parser.parse_args()
 
+    config = PipelineConfig(
+        l2_root_dir=Path(args.l2_root) if args.l2_root else None,
+    )
+    validate_pipeline_environment(config, require_l2_root=True, require_umodel=False, abort_on_error=True)
+
     print("=" * 80)
-    print(" [*] GODOTAGE II — FERRAMENTA DE INSPEÇÃO E TESTE MANUAL")
+    print(" [*] GODOTAGE II — INSPEÇÃO DE PACOTES RAW LINEAGE II")
     print("=" * 80)
 
-    env = L2Environment()
+    env = L2Environment(config=config, l2_root=config.l2_root_dir)
     print(f"\n[+] 1. AMBIENTE LINEAGE II")
     print(f"    -> Pasta Raiz L2   : {env.l2_root}")
     print(f"    -> Mapas .UNR      : {len(env.available_unr)} encontrados")
@@ -61,7 +109,6 @@ def main():
         print(f"    -> Importações     : {len(reader.imports)}")
         print(f"    -> Exportações     : {len(reader.exports)}")
 
-        # TerrainInfo
         terrains = [e for e in reader.exports if e["class_name"] == "TerrainInfo"]
         print(f"    -> TerrainInfo     : {len(terrains)} encontrado(s)")
         if terrains:
@@ -75,7 +122,6 @@ def main():
             layers_count = len(layers) if isinstance(layers, dict) else len(layers)
             print(f"       * Camadas Solo  : {layers_count} camada(s)")
 
-        # StaticMeshActors
         actors = [e for e in reader.exports if e["class_name"] == "StaticMeshActor"]
         print(f"    -> StaticMeshActors: {len(actors)} objetos no mapa")
         if actors:
@@ -88,28 +134,29 @@ def main():
             print(f"       * Posição Mundo : {p.get('Location')}")
             print(f"       * Rotação UE2   : {p.get('Rotation')}")
 
-    # 2. Extração Visual de Texturas
-    tex_pkg_name = args.extract_textures.lower().replace(".utx", "")
-    pkg = env.get_package(tex_pkg_name)
-    if pkg:
-        out_dir = Path(args.out_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        print(f"\n[+] 3. EXTRAÇÃO DE TEXTURAS DE AMOSTRA: {pkg.filepath.name}")
-        print(f"    -> Destino         : {out_dir.resolve()}")
+    # 2. Extração Visual de Texturas de Amostra
+    if args.extract_textures:
+        tex_pkg_name = args.extract_textures.lower().replace(".utx", "")
+        pkg = env.get_package(tex_pkg_name)
+        if pkg:
+            out_dir = Path(args.out_dir) if args.out_dir else config.textures_output_dir / "samples"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            print(f"\n[+] 3. EXTRAÇÃO DE TEXTURAS DE AMOSTRA: {pkg.filepath.name}")
+            print(f"    -> Destino         : {out_dir}")
 
-        saved = 0
-        for exp in pkg.exports:
-            if exp["class_name"] in ("Texture", "Shader", "Material"):
-                img = pkg.extract_image_by_export_name(exp["object_name"])
-                if img:
-                    file_path = out_dir / f"{exp['object_name']}.png"
-                    img.save(file_path, format="PNG")
-                    print(f"       [+] Extraído: {file_path.name:<25} ({img.size[0]}x{img.size[1]}, Modo={img.mode})")
-                    saved += 1
-                    if saved >= args.limit:
-                        break
+            saved = 0
+            for exp in pkg.exports:
+                if exp["class_name"] in ("Texture", "Shader", "Material"):
+                    img = pkg.extract_image_by_export_name(exp["object_name"])
+                    if img:
+                        file_path = out_dir / f"{exp['object_name']}.png"
+                        img.save(file_path, format="PNG")
+                        print(f"       [+] Extraído: {file_path.name:<25} ({img.size[0]}x{img.size[1]}, Modo={img.mode})")
+                        saved += 1
+                        if saved >= args.limit:
+                            break
 
-        print(f"\n[OK] {saved} textura(s) extraída(s) com sucesso em: {out_dir.resolve()}")
+            print(f"\n[OK] {saved} textura(s) extraída(s) com sucesso em: {out_dir}")
 
     print("\n" + "=" * 80)
     print(" [*] Inspeção concluída com sucesso!")

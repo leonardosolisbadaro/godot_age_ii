@@ -2,25 +2,57 @@
 ## @path res://src/adapters/chunk_resource_adapter.gd
 ##
 ## @description
-## Adaptador de interface e IO para leitura e carregamento de artefatos de mapa,
-## metadados, heightfields, atores estáticos, receitas de ambiente e materiais do disco.
+## Adaptador de interface e IO para leitura, descoberta automática e carregamento
+## de artefatos de mapa, metadados, heightfields, atores estáticos e receitas de ambiente.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-20
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted
 
-var base_maps_path: String = "res://assets/maps"
+# ==============================================================================
+# CONSTANTES SEMÂNTICAS DE RECURSOS
+# ==============================================================================
+
+## @const DEFAULT_BASE_MAPS_PATH (String)
+## O que: Caminho padrão do repositório de dados de mapa compilados ("res://assets/maps").
+## Porque: Localização canônica de assets do projeto.
+const DEFAULT_BASE_MAPS_PATH: String = "res://assets/maps"
+
+var base_maps_path: String = DEFAULT_BASE_MAPS_PATH
 
 
-func _init(p_base_path: String = "res://assets/maps") -> void:
+func _init(p_base_path: String = DEFAULT_BASE_MAPS_PATH) -> void:
 	base_maps_path = p_base_path
 
 
 func chunk_exists(chunk_name: String) -> bool:
 	var path = "%s/%s" % [base_maps_path, chunk_name]
-	return DirAccess.dir_exists_absolute(path)
+	var global_p = ProjectSettings.globalize_path(path)
+	return DirAccess.dir_exists_absolute(path) or DirAccess.dir_exists_absolute(global_p)
+
+
+func get_available_chunks() -> Array[String]:
+	var result: Array[String] = []
+	var path = base_maps_path
+	var global_p = ProjectSettings.globalize_path(path)
+	var target_dir = path if DirAccess.dir_exists_absolute(path) else global_p
+
+	var dir = DirAccess.open(target_dir)
+	if dir:
+		dir.list_dir_begin()
+		var entry = dir.get_next()
+		while not entry.is_empty():
+			if dir.current_is_dir() and not entry.begins_with("."):
+				# Valida se é um diretório de chunk com dados de servidor ou cliente
+				if chunk_exists(entry):
+					result.append(entry)
+			entry = dir.get_next()
+		dir.list_dir_end()
+
+	result.sort()
+	return result
 
 
 func load_chunk_meta_dict(chunk_name: String, is_server: bool = true) -> Dictionary:
@@ -30,18 +62,53 @@ func load_chunk_meta_dict(chunk_name: String, is_server: bool = true) -> Diction
 	else:
 		var client_recipe_path = "%s/%s/client/terrain_recipe.json" % [base_maps_path, chunk_name]
 		var dict = _read_json_as_dict(client_recipe_path)
-		if not dict.is_empty():
-			return dict
-		var fallback_path = "%s/%s/client/chunk_meta.json" % [base_maps_path, chunk_name]
-		return _read_json_as_dict(fallback_path)
+		if dict.is_empty():
+			var fallback_path = "%s/%s/client/chunk_meta.json" % [base_maps_path, chunk_name]
+			dict = _read_json_as_dict(fallback_path)
+
+		# Aplica overrides de terrain_recipe_fix.json se existir
+		var fix_root = "%s/%s/terrain_recipe_fix.json" % [base_maps_path, chunk_name]
+		var fix_client = "%s/%s/client/terrain_recipe_fix.json" % [base_maps_path, chunk_name]
+		var fix_path = fix_root if _file_exists(fix_root) else fix_client
+		if _file_exists(fix_path):
+			var fix_data = _read_json_as_dict(fix_path)
+			dict = _apply_terrain_recipe_fix(dict, fix_data)
+
+		return dict
+
+
+func _apply_terrain_recipe_fix(recipe_dict: Dictionary, fix_dict: Dictionary) -> Dictionary:
+	if not recipe_dict.has("layers") or not (recipe_dict["layers"] is Array):
+		return recipe_dict
+
+	var layers_fix = fix_dict.get("layers", { })
+	if not (layers_fix is Dictionary):
+		return recipe_dict
+
+	for layer in recipe_dict["layers"]:
+		if not (layer is Dictionary):
+			continue
+		var l_idx = str(layer.get("layer_index", -1))
+		var tex_f = str(layer.get("texture_file", ""))
+
+		# Verifica match por chave de textura ou índice de camada
+		for fix_key in layers_fix.keys():
+			if fix_key in tex_f or fix_key == l_idx:
+				var override = layers_fix[fix_key]
+				if override is Dictionary:
+					for k in override.keys():
+						layer[k] = override[k]
+
+	return recipe_dict
 
 
 func load_heightfield_bytes(chunk_name: String) -> PackedByteArray:
 	var path = "%s/%s/server/heightfield.bin" % [base_maps_path, chunk_name]
-	if not FileAccess.file_exists(path):
+	var target = _resolve_existing_path(path)
+	if target.is_empty():
 		return PackedByteArray()
 
-	var file = FileAccess.open(path, FileAccess.READ)
+	var file = FileAccess.open(target, FileAccess.READ)
 	if not file:
 		return PackedByteArray()
 
@@ -60,37 +127,36 @@ func load_static_actors_array(chunk_name: String, is_server: bool = false) -> Ar
 	var subfolder = "server" if is_server else "client"
 	var sub_path = "%s/%s/%s/chunk_static_actors.json" % [base_maps_path, chunk_name, subfolder]
 
-	var main_path = root_path if FileAccess.file_exists(root_path) else sub_path
+	var main_path = root_path if _file_exists(root_path) else sub_path
 	var data = _read_json_raw(main_path)
 	var actors: Array = []
 	if data is Array:
 		actors = data
-	elif data is Dictionary and data.has("actors") and data["actors"] is Array:
-		actors = data["actors"]
+	elif data is Dictionary:
+		actors = data.get("actors", [])
 
-	# Aplica overrides manuais de chunk_static_actors_fix.json se existir
-	var fix_path = "%s/%s/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
-	if FileAccess.file_exists(fix_path):
-		var fix_data = _read_json_raw(fix_path)
-		var fixes: Array = []
-		if fix_data is Array:
-			fixes = fix_data
-		elif fix_data is Dictionary and fix_data.has("actors") and fix_data["actors"] is Array:
-			fixes = fix_data["actors"]
-
-		var fix_map = {}
-		for f in fixes:
-			if f is Dictionary and f.has("actor_name"):
-				fix_map[f["actor_name"]] = f
+	# Aplica overrides de chunk_static_actors_fix.json se existir
+	var fix_root = "%s/%s/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
+	var fix_client = "%s/%s/client/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
+	var fix_path = fix_root if _file_exists(fix_root) else fix_client
+	if _file_exists(fix_path):
+		var fix_data = _read_json_as_dict(fix_path)
+		var fix_actors = fix_data.get("actors", [])
+		var fix_map = { }
+		for fa in fix_actors:
+			if fa is Dictionary and fa.has("actor_name"):
+				fix_map[fa["actor_name"]] = fa
 
 		for a in actors:
-			if a is Dictionary and a.has("actor_name") and fix_map.has(a["actor_name"]):
-				var override = fix_map[a["actor_name"]]
-				if override.has("transform") and override["transform"] is Dictionary and a.has("transform") and a["transform"] is Dictionary:
-					for k in override["transform"].keys():
-						a["transform"][k] = override["transform"][k]
-				if override.has("mesh_ref"):
-					a["mesh_ref"] = override["mesh_ref"]
+			if a is Dictionary and a.has("actor_name"):
+				var a_name = a["actor_name"]
+				if fix_map.has(a_name):
+					var override = fix_map[a_name]
+					if override.has("transform") and a.has("transform"):
+						for k in override["transform"].keys():
+							a["transform"][k] = override["transform"][k]
+					if override.has("mesh_ref"):
+						a["mesh_ref"] = override["mesh_ref"]
 
 	return actors
 
@@ -100,18 +166,50 @@ func load_material_recipes_dict(chunk_name: String) -> Dictionary:
 	return _read_json_as_dict(path)
 
 
+func _file_exists(path: String) -> bool:
+	if path.is_empty():
+		return false
+	return (
+		FileAccess.file_exists(path) or FileAccess.file_exists(ProjectSettings.globalize_path(path))
+	)
+
+
+func _resolve_existing_path(path: String) -> String:
+	if path.is_empty():
+		return ""
+	if FileAccess.file_exists(path):
+		return path
+	var glob = ProjectSettings.globalize_path(path)
+	if FileAccess.file_exists(glob):
+		return glob
+	return ""
+
+
 func _read_json_as_dict(path: String) -> Dictionary:
-	var parsed = _read_json_raw(path)
-	if parsed is Dictionary:
-		return parsed
-	return {}
+	var target = _resolve_existing_path(path)
+	if target.is_empty():
+		return { }
+
+	var file = FileAccess.open(target, FileAccess.READ)
+	if not file:
+		return { }
+
+	var text = file.get_as_text()
+	file.close()
+
+	var json = JSON.new()
+	var err = json.parse(text)
+	if err == OK and json.data is Dictionary:
+		return json.data
+	return { }
 
 
 func _read_json_raw(path: String) -> Variant:
-	if not FileAccess.file_exists(path):
+	var target = _resolve_existing_path(path)
+	if target.is_empty():
 		return null
 
-	var file = FileAccess.open(path, FileAccess.READ)
+	var file = FileAccess.open(target, FileAccess.READ)
 	if not file:
 		return null
 
@@ -120,7 +218,6 @@ func _read_json_raw(path: String) -> Variant:
 
 	var json = JSON.new()
 	var err = json.parse(text)
-	if err != OK:
-		return null
-
-	return json.data
+	if err == OK:
+		return json.data
+	return null

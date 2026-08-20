@@ -6,7 +6,7 @@
 ## (servidor ou cliente) e instanciar a entidade TerrainChunkData correspondente.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-20
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted

@@ -3,7 +3,8 @@
 """
 tools/l2_extractor/terrain_builder.py — Compilador de Terreno de Alta Fidelidade Lineage II (UE2 -> Godot 4.7)
 
-Implementa a extração completa e precisa do terreno:
+@description
+Implementa a extração e compilação do relevo com calibração métrica 1:1 e soldagem contínua de bordas:
 - Decodificação de TerrainInfo (Escalas, Localização, Setores)
 - Extração de Heightmap G16 (256x256 uint16)
 - Extração de QuadVisibilityBitmap (Máscara de Buracos/Cavernas)
@@ -11,6 +12,10 @@ Implementa a extração completa e precisa do terreno:
 - Empacotamento de Splatmaps RGBA de 1024x1024
 - Soldagem Contínua de Chunks (2-Pass Seamless Alignment)
 - Geração de Malha 3D GLB Binária e Buffers Físicos Float32 para Servidor
+
+@created 2026-08-18
+@updated 2026-08-20
+@author Leonardo S. Badaró
 """
 
 from collections import defaultdict
@@ -23,17 +28,60 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 from PIL import Image
 
+from .config import (
+    PipelineConfig,
+    SPLATMAP_MAX_LAYERS_PER_MAP,
+    SPLATMAP_RESOLUTION,
+    TERRAIN_GRID_RESOLUTION,
+    TERRAIN_HEIGHT_DIVISOR,
+    TERRAIN_HEIGHT_OFFSET_U16,
+    TERRAIN_SECTOR_SIZE_DEFAULT,
+    UU_TO_METERS_CANONICAL,
+)
 from .environment import L2Environment
 from .package_reader import UnrealPackageReader
 
-UU_TO_METERS_DEFAULT = 0.08  # 1 UU = 8cm = 0.08 metros
+
+# ==============================================================================
+# CONSTANTES SEMÂNTICAS DO FORMATO GLTF / GLB BINÁRIO
+# ==============================================================================
+
+## @const GLB_HEADER_MAGIC (int)
+## O que: Assinatura de 32 bits de arquivos GLB binários (0x46546C67 = "glTF" em Little-Endian).
+## Porque: Identificador obrigatório da especificação glTF 2.0.
+GLB_HEADER_MAGIC: int = 0x46546C67
+
+## @const GLB_VERSION (int)
+## O que: Versão da especificação glTF binária utilizada (2).
+## Porque: O Godot 4 requer contêineres binários glTF 2.0.
+GLB_VERSION: int = 2
+
+## @const GLB_CHUNK_TYPE_JSON (int)
+## O que: Identificador do chunk JSON de metadados no arquivo GLB (0x4E4F534A = "JSON").
+## Porque: Especificação glTF 2.0 Chunk 0.
+GLB_CHUNK_TYPE_JSON: int = 0x4E4F534A
+
+## @const GLB_CHUNK_TYPE_BIN (int)
+## O que: Identificador do chunk binário de buffers no arquivo GLB (0x004E4942 = "BIN\0").
+## Porque: Especificação glTF 2.0 Chunk 1.
+GLB_CHUNK_TYPE_BIN: int = 0x004E4942
+
+## @const GLTF_COMPONENT_FLOAT (int)
+## O que: Código OpenGL para float de 32 bits nos accessors do glTF (5126).
+## Porque: Define buffers de posição, normal e coordenadas UV.
+GLTF_COMPONENT_FLOAT: int = 5126
+
+## @const GLTF_COMPONENT_UNSIGNED_INT (int)
+## O que: Código OpenGL para uint de 32 bits nos accessors do glTF (5125).
+## Porque: Define o buffer de índices de triângulos da malha.
+GLTF_COMPONENT_UNSIGNED_INT: int = 5125
 
 
 def build_terrain_mesh(
     heights: np.ndarray,
     scale: Tuple[float, float, float],
     location: Tuple[float, float, float],
-    unit_scale: float = UU_TO_METERS_DEFAULT,
+    unit_scale: float = UU_TO_METERS_CANONICAL,
     step: int = 1,
     hole_mask: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -61,7 +109,7 @@ def build_terrain_mesh(
     grid_x, grid_z = np.meshgrid(xs, zs)
 
     # Altitude mundial em metros calibrada com a fórmula canônica da UE2 para heightmaps 16-bit G16
-    world_y = ((heights.astype(np.float32) - 32768.0) * (sy_scale / 256.0)) + loc_z
+    world_y = ((heights.astype(np.float32) - TERRAIN_HEIGHT_OFFSET_U16) * (sy_scale / TERRAIN_HEIGHT_DIVISOR)) + loc_z
 
     # Cálculo de normais de superfície com espaçamento real entre vértices
     dx_eff = (2.0 * half_w) / max(1, cols - 1)
@@ -98,7 +146,6 @@ def build_terrain_mesh(
     # Se houver máscara de buracos (hole_mask), descarta os triângulos dos quads invisíveis
     if hole_mask is not None and hole_mask.shape == (rows - 1, cols - 1):
         visible_mask = hole_mask.reshape(-1)
-        # Cada quad tem 2 triângulos (a e b)
         quad_mask_doubled = np.repeat(visible_mask, 2)
         if len(quad_mask_doubled) == len(triangles):
             triangles = triangles[quad_mask_doubled]
@@ -185,7 +232,7 @@ def write_glb(
         "accessors": [
             {
                 "bufferView": 0,
-                "componentType": 5126,
+                "componentType": GLTF_COMPONENT_FLOAT,
                 "count": vertex_count,
                 "type": "VEC3",
                 "min": position_data.min(axis=0).tolist(),
@@ -193,19 +240,19 @@ def write_glb(
             },
             {
                 "bufferView": 1,
-                "componentType": 5126,
+                "componentType": GLTF_COMPONENT_FLOAT,
                 "count": vertex_count,
                 "type": "VEC3",
             },
             {
                 "bufferView": 2,
-                "componentType": 5126,
+                "componentType": GLTF_COMPONENT_FLOAT,
                 "count": vertex_count,
                 "type": "VEC2",
             },
             {
                 "bufferView": 3,
-                "componentType": 5125,
+                "componentType": GLTF_COMPONENT_UNSIGNED_INT,
                 "count": int(index_data.size),
                 "type": "SCALAR",
             },
@@ -216,26 +263,29 @@ def write_glb(
     json_chunk += b" " * ((-len(json_chunk)) % 4)
     total_length = 12 + 8 + len(json_chunk) + 8 + len(binary_chunk)
 
+    filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, "wb") as file:
-        file.write(struct.pack("<III", 0x46546C67, 2, total_length))
-        file.write(struct.pack("<II", len(json_chunk), 0x4E4F534A))
+        file.write(struct.pack("<III", GLB_HEADER_MAGIC, GLB_VERSION, total_length))
+        file.write(struct.pack("<II", len(json_chunk), GLB_CHUNK_TYPE_JSON))
         file.write(json_chunk)
-        file.write(struct.pack("<II", len(binary_chunk), 0x004E4942))
+        file.write(struct.pack("<II", len(binary_chunk), GLB_CHUNK_TYPE_BIN))
         file.write(binary_chunk)
 
 
 class TerrainChunkCompiler:
-    """Compilador de um chunk de terreno individual."""
+    """Compilador de um chunk de terreno individual com injeção de dependências."""
 
     def __init__(
         self,
         input_file: Union[str, Path],
         output_dir: Union[str, Path],
         l2_root: Optional[Union[str, Path]] = None,
-        unit_scale: float = UU_TO_METERS_DEFAULT,
+        unit_scale: float = UU_TO_METERS_CANONICAL,
+        config: Optional[PipelineConfig] = None,
     ):
+        self.config = config or PipelineConfig(unit_scale=unit_scale)
         self.input_file = Path(input_file).resolve()
-        self.env = L2Environment(self.input_file, l2_root)
+        self.env = L2Environment(config=self.config, target_file=self.input_file, l2_root=l2_root)
         self.pkg = UnrealPackageReader(self.input_file)
         self.unit_scale = unit_scale
 
@@ -262,7 +312,7 @@ class TerrainChunkCompiler:
                 scale = props.get("TerrainScale", (64.0, 64.0, 32.0))
                 location = props.get("Location", (0.0, 0.0, 0.0))
                 terrain_map_ref = props.get("TerrainMap", None)
-                sector_size = props.get("TerrainSectorSize", 16)
+                sector_size = props.get("TerrainSectorSize", TERRAIN_SECTOR_SIZE_DEFAULT)
                 quad_vis = props.get("QuadVisibilityBitmap") or props.get("QuadVisibilityBitmapOrig")
 
                 if isinstance(scale, dict) and scale.get("_is_array"):
@@ -382,20 +432,21 @@ class TerrainChunkCompiler:
             matched["offset"] : matched["offset"] + matched["size"]
         ]
         ci_131072 = b"\x40\x80\x10"
-        footer_256 = struct.pack("<IIBB", 256, 256, 8, 8)
+        footer_256 = struct.pack("<IIBB", TERRAIN_GRID_RESOLUTION, TERRAIN_GRID_RESOLUTION, 8, 8)
+        raw_size = TERRAIN_GRID_RESOLUTION * TERRAIN_GRID_RESOLUTION * 2
 
         ci_pos = exp_data.find(ci_131072)
         if ci_pos != -1:
             start = ci_pos + len(ci_131072)
-            end = start + 131072
+            end = start + raw_size
             if end + 10 <= len(exp_data) and exp_data[end : end + 10] == footer_256:
-                arr = np.frombuffer(exp_data[start:end], dtype="<u2").reshape((256, 256))
+                arr = np.frombuffer(exp_data[start:end], dtype="<u2").reshape((TERRAIN_GRID_RESOLUTION, TERRAIN_GRID_RESOLUTION))
                 return arr.copy()
 
         pos = exp_data.rfind(footer_256)
-        if pos >= 131072:
-            raw_bytes = exp_data[pos - 131072 : pos]
-            arr = np.frombuffer(raw_bytes, dtype="<u2").reshape((256, 256))
+        if pos >= raw_size:
+            raw_bytes = exp_data[pos - raw_size : pos]
+            arr = np.frombuffer(raw_bytes, dtype="<u2").reshape((TERRAIN_GRID_RESOLUTION, TERRAIN_GRID_RESOLUTION))
             return arr.copy()
         return None
 
@@ -537,17 +588,17 @@ class TerrainChunkCompiler:
 
         if pack_splatmaps:
             if not active_masks:
-                empty_splat = np.zeros((256, 256, 4), dtype=np.uint8)
+                empty_splat = np.zeros((TERRAIN_GRID_RESOLUTION, TERRAIN_GRID_RESOLUTION, 4), dtype=np.uint8)
                 splat_filename = "splatmap_0.png"
                 splat_path = self.client_dir / splat_filename
                 Image.fromarray(empty_splat, mode="RGBA").save(splat_path, format="PNG")
                 splatmap_files.append(splat_filename)
                 generated.append(splat_path)
             else:
-                for i in range(0, len(active_masks), 4):
-                    batch = active_masks[i : i + 4]
-                    splat_w = max(1024, max(m.size[0] for _, m in batch))
-                    splat_h = max(1024, max(m.size[1] for _, m in batch))
+                for i in range(0, len(active_masks), SPLATMAP_MAX_LAYERS_PER_MAP):
+                    batch = active_masks[i : i + SPLATMAP_MAX_LAYERS_PER_MAP]
+                    splat_w = max(SPLATMAP_RESOLUTION, max(m.size[0] for _, m in batch))
+                    splat_h = max(SPLATMAP_RESOLUTION, max(m.size[1] for _, m in batch))
                     rgba_arr = np.zeros((splat_h, splat_w, 4), dtype=np.uint8)
 
                     for ch_idx, (layer_orig_idx, m_img) in enumerate(batch):
@@ -568,7 +619,27 @@ class TerrainChunkCompiler:
                     generated.append(splat_path)
                     splat_idx += 1
 
-        # 5. terrain_recipe.json
+        # 5. terrain_recipe.json (com suporte a overrides manuais)
+        fix_root = self.chunk_dir / "terrain_recipe_fix.json"
+        fix_client = self.client_dir / "terrain_recipe_fix.json"
+        fix_path = fix_root if fix_root.exists() else (fix_client if fix_client.exists() else None)
+        if fix_path:
+            try:
+                with open(fix_path, "r", encoding="utf-8") as ff:
+                    fix_data = json.load(ff)
+                    layers_fix = fix_data.get("layers", {})
+                    if isinstance(layers_fix, dict):
+                        for lay in recipe_layers:
+                            if isinstance(lay, dict):
+                                l_idx = str(lay.get("layer_index", -1))
+                                tex_f = str(lay.get("texture_file", ""))
+                                for fix_key, override in layers_fix.items():
+                                    if fix_key in tex_f or fix_key == l_idx:
+                                        if isinstance(override, dict):
+                                            lay.update(override)
+            except Exception:
+                pass
+
         recipe = {
             "chunk_name": self.clean_stem,
             "lightmap": None,
@@ -589,12 +660,14 @@ def compile_cluster(
     l2_root: Optional[Union[str, Path]] = None,
     step: int = 1,
     pack_splatmaps: bool = True,
-    unit_scale: float = UU_TO_METERS_DEFAULT,
+    unit_scale: float = UU_TO_METERS_CANONICAL,
+    config: Optional[PipelineConfig] = None,
 ) -> Dict[str, Any]:
     """
     Compila um lote de chunks executando o algoritmo 2-Pass Seamless Alignment
     para unir as bordas do relevo com continuidade de derivada zero.
     """
+    cfg = config or PipelineConfig(unit_scale=unit_scale)
     start_time = time.time()
     compilers: Dict[str, TerrainChunkCompiler] = {}
     extracted_data: Dict[str, Any] = {}
@@ -606,7 +679,7 @@ def compile_cluster(
 
     # 1. Extração de Todos os Heightmaps do Cluster
     for inp in input_files:
-        comp = TerrainChunkCompiler(inp, output_dir, l2_root, unit_scale)
+        comp = TerrainChunkCompiler(inp, output_dir, l2_root, unit_scale, config=cfg)
         c_name = comp.clean_stem
         compilers[c_name] = comp
 
@@ -632,16 +705,19 @@ def compile_cluster(
 
     # 2. Sintetizador de Grade Global (2-Pass Seamless Vertex Unifier)
     global_grid = defaultdict(list)
+    grid_res = TERRAIN_GRID_RESOLUTION
+    grid_step = grid_res - 1
+
     for c_name, data in extracted_data.items():
         coords = [int(p) for p in c_name.split("_") if p.isdigit()]
         if len(coords) < 2:
             continue
         cx, cy = coords[0], coords[1]
         h = data["heights"]
-        for r in range(256):
-            for c in range(256):
-                gx = cx * 255 + c
-                gy = cy * 255 + r
+        for r in range(grid_res):
+            for c in range(grid_res):
+                gx = cx * grid_step + c
+                gy = cy * grid_step + r
                 global_grid[(gx, gy)].append(float(h[r, c]))
 
     # Aplica o valor unificado exato em todos os chunks que compartilham a coordenada
@@ -651,10 +727,10 @@ def compile_cluster(
             continue
         cx, cy = coords[0], coords[1]
         h = data["heights"]
-        for r in range(256):
-            for c in range(256):
-                gx = cx * 255 + c
-                gy = cy * 255 + r
+        for r in range(grid_res):
+            for c in range(grid_res):
+                gx = cx * grid_step + c
+                gy = cy * grid_step + r
                 samples = global_grid[(gx, gy)]
                 if len(samples) > 1:
                     h[r, c] = int(round(sum(samples) / len(samples)))

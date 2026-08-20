@@ -6,12 +6,35 @@
 ## em tempo constante O(1) de matrizes de elevação de terreno em coordenadas mundiais.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-20
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted
 
 const TerrainChunkDataClass = preload("res://src/domain/terrain_chunk_data.gd")
+
+# ==============================================================================
+# CONSTANTES SEMÂNTICAS DE ELEVAÇÃO
+# ==============================================================================
+
+## @const FLOAT32_BYTE_SIZE (int)
+## O que: Tamanho em bytes de 1 float de precisão simples no buffer binário (4 bytes).
+## Porque: Decodificação de heightfield.bin (IEEE 754 float32 little-endian).
+const FLOAT32_BYTE_SIZE: int = 4
+
+## @const EPSILON_DIMENSION (float)
+## O que: Margem infinitesimal para prevenir divisão por zero (0.001).
+## Porque: Garante estabilidade numérica em cálculos de normalização.
+const EPSILON_DIMENSION: float = 0.001
+
+## @const DERIVATIVE_PROBE_STEP_METERS (float)
+## O que: Espaçamento de amostragem finita em metros para gradiente de normal e inclinação (1.0m).
+## Porque: Proporciona amostragem suave da inclinação de terreno.
+const DERIVATIVE_PROBE_STEP_METERS: float = 1.0
+
+# ==============================================================================
+# PROPRIEDADES DA ENTIDADE
+# ==============================================================================
 
 var heights: PackedFloat32Array
 var grid_width: int = 0
@@ -31,7 +54,7 @@ func _init(
 	p_cell_z: float = 1.0,
 	p_origin: Vector3 = Vector3.ZERO,
 	p_total_w: float = 0.0,
-	p_total_d: float = 0.0
+	p_total_d: float = 0.0,
 ) -> void:
 	heights = p_heights
 	grid_width = p_grid_w
@@ -44,11 +67,11 @@ func _init(
 
 
 static func from_chunk_data_and_bytes(chunk_data: TerrainChunkDataClass, raw_bytes: PackedByteArray) -> Variant:
-	var float_count = raw_bytes.size() / 4
+	var float_count = raw_bytes.size() / FLOAT32_BYTE_SIZE
 	var float_arr = PackedFloat32Array()
 	float_arr.resize(float_count)
 	for i in range(float_count):
-		float_arr[i] = raw_bytes.decode_float(i * 4)
+		float_arr[i] = raw_bytes.decode_float(i * FLOAT32_BYTE_SIZE)
 
 	var script_res = load("res://src/domain/heightfield_sampler.gd")
 	return script_res.new(
@@ -59,7 +82,7 @@ static func from_chunk_data_and_bytes(chunk_data: TerrainChunkDataClass, raw_byt
 		chunk_data.cell_size_z,
 		chunk_data.world_origin,
 		chunk_data.total_width_meters,
-		chunk_data.total_depth_meters
+		chunk_data.total_depth_meters,
 	)
 
 
@@ -74,8 +97,8 @@ func get_height_at(world_x: float, world_z: float) -> float:
 	var local_z = world_z - (world_origin.z - half_d)
 
 	# 2. Converte para coordenadas normalizadas [0 .. 1] e mapeia para a grade de vértices [0 .. grid - 1]
-	var norm_x = clampf(local_x / maxf(total_width, 0.001), 0.0, 1.0)
-	var norm_z = clampf(local_z / maxf(total_depth, 0.001), 0.0, 1.0)
+	var norm_x = clampf(local_x / maxf(total_width, EPSILON_DIMENSION), 0.0, 1.0)
+	var norm_z = clampf(local_z / maxf(total_depth, EPSILON_DIMENSION), 0.0, 1.0)
 
 	var u = norm_x * float(grid_width - 1)
 	var v = norm_z * float(grid_depth - 1)
@@ -101,22 +124,19 @@ func get_height_at(world_x: float, world_z: float) -> float:
 	return world_origin.y + lerpf(h_top, h_bottom, tz)
 
 
-func get_normal_at(world_x: float, world_z: float, delta_step: float = 0.5) -> Vector3:
+func get_normal_at(world_x: float, world_z: float) -> Vector3:
+	var delta_p = DERIVATIVE_PROBE_STEP_METERS
 	var h_center = get_height_at(world_x, world_z)
-	var h_right = get_height_at(world_x + delta_step, world_z)
-	var h_forward = get_height_at(world_x, world_z + delta_step)
+	var h_dx = get_height_at(world_x + delta_p, world_z)
+	var h_dz = get_height_at(world_x, world_z + delta_p)
 
-	var v_x = Vector3(delta_step, h_right - h_center, 0.0)
-	var v_z = Vector3(0.0, h_forward - h_center, delta_step)
+	var grad_x = (h_dx - h_center) / delta_p
+	var grad_z = (h_dz - h_center) / delta_p
 
-	var normal = v_z.cross(v_x).normalized()
-	if normal.y < 0.0:
-		normal = -normal
-	return normal
+	return Vector3(-grad_x, 1.0, -grad_z).normalized()
 
 
 func get_slope_ratio_at(world_x: float, world_z: float) -> float:
-	var normal = get_normal_at(world_x, world_z)
-	if normal.y >= 0.9999:
-		return 0.0
-	return sqrt(1.0 - normal.y * normal.y) / maxf(normal.y, 0.0001)
+	var norm = get_normal_at(world_x, world_z)
+	var horiz_len = sqrt(norm.x * norm.x + norm.z * norm.z)
+	return horiz_len / maxf(norm.y, EPSILON_DIMENSION)

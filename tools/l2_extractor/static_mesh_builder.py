@@ -3,11 +3,16 @@
 """
 tools/l2_extractor/static_mesh_builder.py — Extrator de Malhas Estáticas e Instâncias (.USX e .UNR)
 
+@description
 Implementa:
 - Decodificação do formato binário UStaticMesh da Unreal Engine 2 (Streams de vértices, normais, UVs, triangle strips com 0xFFFF)
 - Extração de seções e atribuição de materiais/texturas
 - Extração de instâncias de StaticMeshActor dentro dos mapas .unr (Posição, Rotação, Escala 3D)
 - Exportação de malhas reutilizáveis em .glb binário e metadados de posicionamento em chunk_static_actors.json
+
+@created 2026-08-18
+@updated 2026-08-20
+@author Leonardo S. Badaró
 """
 
 import json
@@ -17,9 +22,40 @@ import struct
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
+from .config import (
+    PipelineConfig,
+    TRIANGLE_STRIP_RESTART_INDEX,
+    UE2_ROTATOR_FULL_CIRCLE,
+    UU_TO_METERS_CANONICAL,
+)
 from .environment import L2Environment
 from .package_reader import UnrealPackageReader
-from .terrain_builder import write_glb, UU_TO_METERS_DEFAULT
+from .terrain_builder import write_glb
+
+
+# ==============================================================================
+# CONSTANTES SEMÂNTICAS DE STATIC MESHES
+# ==============================================================================
+
+## @const VERTEX_STREAM_BYTE_STRIDE (int)
+## O que: Tamanho em bytes de 1 elemento no stream de vértices da UE2 (24 bytes).
+## Porque: Composto por 3 floats de posição (12 bytes) + 3 floats de normal (12 bytes).
+VERTEX_STREAM_BYTE_STRIDE: int = 24
+
+## @const UV_COORDINATE_BYTE_STRIDE (int)
+## O que: Tamanho em bytes de 1 par de coordenadas UV em ponto flutuante (8 bytes).
+## Porque: 2 floats de 32 bits (U, V).
+UV_COORDINATE_BYTE_STRIDE: int = 8
+
+## @const BOUNDING_BOX_BYTE_SIZE (int)
+## O que: Tamanho da estrutura de BoundingBox serializada na UE2 (25 bytes).
+## Porque: Vector Min (12B) + Vector Max (12B) + Byte IsValid (1B).
+BOUNDING_BOX_BYTE_SIZE: int = 25
+
+## @const BOUNDING_SPHERE_BYTE_SIZE (int)
+## O que: Tamanho da estrutura de BoundingSphere serializada na UE2 (16 bytes).
+## Porque: Vector Center (12B) + Float Radius (4B).
+BOUNDING_SPHERE_BYTE_SIZE: int = 16
 
 
 def ue2_rotator_to_euler(pitch: int, yaw: int, roll: int) -> Tuple[float, float, float]:
@@ -27,8 +63,7 @@ def ue2_rotator_to_euler(pitch: int, yaw: int, roll: int) -> Tuple[float, float,
     Converte um Rotator da Unreal Engine 2 (0..65536 unidades de rotação)
     para ângulos de Euler em radianos no sistema de coordenadas do Godot.
     """
-    # 65536 unidades = 360 graus = 2*pi radianos
-    factor = (2.0 * math.pi) / 65536.0
+    factor = (2.0 * math.pi) / UE2_ROTATOR_FULL_CIRCLE
     r_pitch = float(pitch) * factor
     r_yaw = -float(yaw) * factor  # Inverte Yaw devido ao eixo Z no Godot
     r_roll = float(roll) * factor
@@ -41,7 +76,7 @@ def strip_to_triangles(strip_indices: list) -> list:
     current_strip = []
 
     for idx in strip_indices:
-        if idx == 0xFFFF or idx == 65535:
+        if idx == TRIANGLE_STRIP_RESTART_INDEX or idx == 65535:
             if len(current_strip) >= 3:
                 for i in range(len(current_strip) - 2):
                     v0, v1, v2 = current_strip[i], current_strip[i + 1], current_strip[i + 2]
@@ -69,7 +104,8 @@ def strip_to_triangles(strip_indices: list) -> list:
 class StaticMeshParser:
     """Parser para malhas estáticas UStaticMesh da Unreal Engine 2."""
 
-    def __init__(self, package: UnrealPackageReader, unit_scale: float = 0.08):
+    def __init__(self, package: UnrealPackageReader, unit_scale: float = UU_TO_METERS_CANONICAL, config: Optional[PipelineConfig] = None):
+        self.config = config or PipelineConfig(unit_scale=unit_scale)
         self.pkg = package
         self.unit_scale = unit_scale
 
@@ -101,7 +137,8 @@ class StaticMeshParser:
                         return res
 
         exp_end = exp["offset"] + exp["size"]
-        if pos < exp["offset"] or pos + 41 > exp_end:
+        header_bounds_size = BOUNDING_BOX_BYTE_SIZE + BOUNDING_SPHERE_BYTE_SIZE
+        if pos < exp["offset"] or pos + header_bounds_size > exp_end:
             pos = exp["offset"]
 
         # 1. BoundingBox (25 bytes) e BoundingSphere (16 bytes)
@@ -110,7 +147,7 @@ class StaticMeshParser:
         center_v = (0.0, 0.0, 0.0)
         radius = 1.0
 
-        if pos + 41 <= exp_end:
+        if pos + header_bounds_size <= exp_end:
             try:
                 min_v = struct.unpack_from("<fff", self.pkg.data, pos)
                 pos += 12
@@ -125,7 +162,7 @@ class StaticMeshParser:
             except Exception:
                 pos = exp["offset"]
 
-        # 1. Localização do buffer de vértices (24B: 3f Posição + 3f Normal)
+        # 2. Localização do buffer de vértices (24B: 3f Posição + 3f Normal)
         v_start = None
         for p in range(pos, min(pos + 3000, exp_end - 48), 4):
             try:
@@ -133,7 +170,7 @@ class StaticMeshParser:
                 n_sq = nx * nx + ny * ny + nz * nz
                 if 0.90 <= n_sq <= 1.10:
                     px2, py2, pz2, nx2, ny2, nz2 = struct.unpack_from(
-                        "<6f", self.pkg.data, p + 24
+                        "<6f", self.pkg.data, p + VERTEX_STREAM_BYTE_STRIDE
                     )
                     if 0.90 <= (nx2 * nx2 + ny2 * ny2 + nz2 * nz2) <= 1.10:
                         v_start = p
@@ -144,36 +181,35 @@ class StaticMeshParser:
         if v_start is None:
             return None
 
-        # Conta todos os vértices válidos contíguos
         p = v_start
-        while p + 24 <= exp_end:
+        while p + VERTEX_STREAM_BYTE_STRIDE <= exp_end:
             try:
                 px, py, pz, nx, ny, nz = struct.unpack_from("<6f", self.pkg.data, p)
                 n_sq = nx * nx + ny * ny + nz * nz
                 if 0.70 <= n_sq <= 1.30:
-                    p += 24
+                    p += VERTEX_STREAM_BYTE_STRIDE
                 else:
                     break
             except Exception:
                 break
 
-        num_v = (p - v_start) // 24
+        num_v = (p - v_start) // VERTEX_STREAM_BYTE_STRIDE
         if num_v < 3:
             return None
 
         raw_verts = np.frombuffer(
-            self.pkg.data[v_start : v_start + num_v * 24], dtype="<f4"
+            self.pkg.data[v_start : v_start + num_v * VERTEX_STREAM_BYTE_STRIDE], dtype="<f4"
         ).reshape((num_v, 6))
         positions_arr = raw_verts[:, :3].copy()
         normals_arr = raw_verts[:, 3:].copy()
-        v_end = v_start + num_v * 24
+        v_end = v_start + num_v * VERTEX_STREAM_BYTE_STRIDE
 
-        # 2. Localização de UVs em float32 (num_v pares)
+        # 3. Localização de UVs em float32 (num_v pares)
         uvs = None
         uv_end = v_end
-        for uv_off in range(v_end, min(v_end + 60000, exp_end - num_v * 8), 4):
+        for uv_off in range(v_end, min(v_end + 60000, exp_end - num_v * UV_COORDINATE_BYTE_STRIDE), 4):
             cand_uv = np.frombuffer(
-                self.pkg.data[uv_off : uv_off + num_v * 8], dtype="<f4"
+                self.pkg.data[uv_off : uv_off + num_v * UV_COORDINATE_BYTE_STRIDE], dtype="<f4"
             )
             if len(cand_uv) == num_v * 2:
                 cand_uv = cand_uv.reshape((num_v, 2))
@@ -183,17 +219,16 @@ class StaticMeshParser:
                     and np.std(cand_uv) > 0.05
                 ):
                     uvs = cand_uv.copy()
-                    uv_end = uv_off + num_v * 8
+                    uv_end = uv_off + num_v * UV_COORDINATE_BYTE_STRIDE
                     break
 
         if uvs is None:
             uvs = np.zeros((num_v, 2), dtype=np.float32)
 
-        # 3. Localização do IndexBuffer canônico
+        # 4. Localização do IndexBuffer canônico
         best_triangles = None
         best_score = 999999.0
 
-        # Testa offsets direcionados próximos ao fim dos UVs
         test_offsets = []
         for step in range(0, min(2000, exp_end - uv_end - 6), 2):
             test_offsets.append(uv_end + step)
@@ -211,7 +246,6 @@ class StaticMeshParser:
                 valid_cnt += 1
 
             if valid_cnt >= 12:
-                # Checa 6-line edges
                 line_cnt = valid_cnt // 6
                 if line_cnt >= 2:
                     is_6line = True
@@ -256,7 +290,6 @@ class StaticMeshParser:
                             best_score = mean_edge_l
                             continue
 
-                # Checa 3-index triangle list
                 tri_cnt = valid_cnt // 3
                 cand_tri = cand_u16[: tri_cnt * 3].reshape((tri_cnt, 3))
                 edge_lens = []
@@ -330,13 +363,10 @@ class StaticMeshParser:
 
 def extract_map_static_actors(
     map_package: UnrealPackageReader,
-    unit_scale: float = UU_TO_METERS_DEFAULT,
+    unit_scale: float = UU_TO_METERS_CANONICAL,
     heightfield: Optional[np.ndarray] = None,
 ) -> List[Dict[str, Any]]:
     """Extrai todas as instâncias de StaticMeshActor de um mapa .unr sincronizadas com o terreno."""
-    # Obtém limites espaciais do TerrainInfo
-    min_x = 0.0
-    min_z = 0.0
     chunk_w = 2621.44
     chunk_d = 2621.44
 
@@ -346,16 +376,10 @@ def extract_map_static_actors(
             t_props = map_package.read_properties(
                 p_start, exp["size"] - (p_start - exp["offset"])
             )
-            t_loc = t_props.get("Location", (0.0, 0.0, 0.0))
             t_scale = t_props.get("TerrainScale", (128.0, 128.0, 76.0))
             chunk_w = 256.0 * float(t_scale[0]) * unit_scale
             chunk_d = 256.0 * float(t_scale[1]) * unit_scale
-            min_x = float(t_loc[0]) * unit_scale
-            min_z = float(t_loc[1]) * unit_scale
             break
-
-    max_x = min_x + chunk_w
-    max_z = min_z + chunk_d
 
     actors = []
     for exp in map_package.exports:
@@ -378,16 +402,12 @@ def extract_map_static_actors(
             if isinstance(draw_scale3d, dict) and draw_scale3d.get("_is_array"):
                 draw_scale3d = draw_scale3d.get(0, (1.0, 1.0, 1.0))
 
-            # Converte coordenadas para o sistema de coordenadas métrico do Godot
-            # No UE2, as coordenadas dos atores nos pacotes .unr possuem offset de meio-chunk (+16384 UU = +1310.72m)
-            # em relação ao corner de TerrainInfo.
             half_chunk_w = chunk_w / 2.0
             half_chunk_d = chunk_d / 2.0
             loc_x = (float(location[0]) * unit_scale) + half_chunk_w
             loc_y = float(location[2]) * unit_scale
             loc_z = (float(location[1]) * unit_scale) + half_chunk_d
 
-            # Converte rotações
             p, y, r = (
                 int(rotation[0]),
                 int(rotation[1]),
@@ -395,7 +415,6 @@ def extract_map_static_actors(
             )
             rot_euler = ue2_rotator_to_euler(p, y, r)
 
-            # Escala combinada
             scale_x = float(draw_scale3d[0]) * draw_scale
             scale_y = float(draw_scale3d[2]) * draw_scale
             scale_z = float(draw_scale3d[1]) * draw_scale

@@ -5,7 +5,7 @@
 ## Testes unitários AAA para o adaptador de recursos ChunkResourceAdapter.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-20
 ##
 ## @author Leonardo S. Badaró
 extends GutTest
@@ -27,6 +27,18 @@ func test_chunk_exists_and_load_real_metadata() -> void:
 
 	var client_meta = adapter.load_chunk_meta_dict("16_24", false)
 	assert_false(client_meta.is_empty(), "Metadados do cliente devem ser carregados")
+
+
+func test_get_available_chunks() -> void:
+	# Arrange
+	var adapter = ChunkResourceAdapterClass.new("res://assets/maps")
+
+	# Act
+	var available = adapter.get_available_chunks()
+
+	# Assert
+	assert_gt(available.size(), 0, "Deve encontrar ao menos 1 chunk disponível em assets/maps")
+	assert_true("16_24" in available, "Chunk 16_24 deve estar listado nos chunks disponíveis")
 
 
 func test_load_heightfield_bytes() -> void:
