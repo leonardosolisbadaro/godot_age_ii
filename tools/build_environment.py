@@ -115,18 +115,19 @@ def process_map_environment(
             actors_meta = json.load(f)
 
         for a in actors_meta.get("actors", []):
-            m_ref = a.get("mesh_ref", {})
-            pkg_name = m_ref.get("package")
-            if pkg_name:
-                t_name = pkg_name[:-2] + "_t" if pkg_name.lower().endswith("_s") else pkg_name
-                target_pkg = t_name if env.get_package(t_name) else pkg_name
+            m_ref = a.get("mesh_ref")
+            if isinstance(m_ref, dict):
+                pkg_name = m_ref.get("package")
+                if pkg_name:
+                    t_name = pkg_name[:-2] + "_t" if pkg_name.lower().endswith("_s") else pkg_name
+                    target_pkg = t_name if env.get_package(t_name) else pkg_name
 
-                tex_pkg = env.get_package(target_pkg)
-                if tex_pkg:
-                    for exp in tex_pkg.exports:
-                        if exp["class_name"] in ("Texture", "Shader", "FinalBlend"):
-                            m_info = resolver.resolve_material(target_pkg, exp["object_name"])
-                            resolved_materials[f"{target_pkg}.{exp['object_name']}"] = m_info
+                    tex_pkg = env.get_package(target_pkg)
+                    if tex_pkg:
+                        for exp in tex_pkg.exports:
+                            if exp["class_name"] in ("Texture", "Shader", "FinalBlend"):
+                                m_info = resolver.resolve_material(target_pkg, exp["object_name"])
+                                resolved_materials[f"{target_pkg}.{exp['object_name']}"] = m_info
 
     # Salva manifesto de materiais do chunk
     mat_recipe_file = chunk_client_dir / "material_recipes.json"

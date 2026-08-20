@@ -12,18 +12,19 @@
 extends CharacterBody3D
 
 const MOVE_SPEED := 12.0
-const SPRINT_MULTIPLIER := 1.8
+const SPRINT_MULTIPLIER := 5.0
 const GRAVITY := 20.0
 const JUMP_VELOCITY := 7.0
 
 const CAMERA_DEFAULT_SPRING_LENGTH := 12.0
 const CAMERA_MIN_ZOOM := 2.0
-const CAMERA_MAX_ZOOM := 80.0
-const CAMERA_ZOOM_STEP := 2.0
+const CAMERA_MAX_ZOOM := 120.0
+const CAMERA_ZOOM_STEP := 3.0
 const MOUSE_SENSITIVITY := 0.25
 
 var is_local: bool = true
 var peer_id: int = 1
+var is_flying: bool = false
 
 var _camera_pivot: Node3D
 var _spring_arm: SpringArm3D
@@ -92,6 +93,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not is_local or not _camera_pivot:
 		return
 
+	# Alternar Gravidade / Modo Voo com Tecla 'G'
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_G:
+			is_flying = !is_flying
+			velocity = Vector3.ZERO
+
 	# Rotação de Câmera com Botão Direito do Mouse
 	if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 		_camera_pivot.rotation_degrees.y -= event.relative.x * MOUSE_SENSITIVITY
@@ -112,11 +119,24 @@ func _physics_process(delta: float) -> void:
 	if not is_local:
 		return
 
-	# Gravidade
-	if not is_on_floor():
-		velocity.y -= GRAVITY * delta
+	var speed = MOVE_SPEED
+	if Input.is_key_pressed(KEY_SHIFT):
+		speed *= SPRINT_MULTIPLIER
+
+	# Modo Voo (Fly Mode sem gravidade) vs Modo Terrestre
+	if is_flying:
+		if Input.is_key_pressed(KEY_E):
+			velocity.y = speed
+		elif Input.is_key_pressed(KEY_Q):
+			velocity.y = -speed
+		else:
+			velocity.y = move_toward(velocity.y, 0.0, speed * delta * 5.0)
 	else:
-		velocity.y = 0.0
+		# Gravidade Normal
+		if not is_on_floor():
+			velocity.y -= GRAVITY * delta
+		else:
+			velocity.y = 0.0
 
 	# Input de Movimentação (WASD)
 	var input_dir := Vector2.ZERO
@@ -130,10 +150,6 @@ func _physics_process(delta: float) -> void:
 		input_dir.x += 1.0
 
 	input_dir = input_dir.normalized()
-
-	var speed = MOVE_SPEED
-	if Input.is_key_pressed(KEY_SHIFT):
-		speed *= SPRINT_MULTIPLIER
 
 	if _camera_pivot and input_dir.length_squared() > 0.01:
 		var cam_yaw = _camera_pivot.global_rotation.y

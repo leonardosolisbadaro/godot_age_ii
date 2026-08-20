@@ -89,12 +89,14 @@ def extract_map_environment(
 
             # 1. Luz Solar Principal
             if c_name in ("NMovableSunLight", "Sunlight") and env_data["sunlight"] is None:
-                rot = props.get("Rotation", [0, 0, 0])
-                p_val, y_val, r_val = (
-                    int(rot[0]) if len(rot) > 0 else 0,
-                    int(rot[1]) if len(rot) > 1 else 0,
-                    int(rot[2]) if len(rot) > 2 else 0,
-                )
+                rot = props.get("Rotation", (0, 0, 0))
+                if isinstance(rot, dict) and rot.get("_is_array"):
+                    rot = rot.get(0, (0, 0, 0))
+                if isinstance(rot, (list, tuple)) and len(rot) > 0 and isinstance(rot[0], (list, tuple)):
+                    rot = rot[0]
+                p_val = int(rot[0]) if len(rot) > 0 and not isinstance(rot[0], (list, tuple, dict)) else 0
+                y_val = int(rot[1]) if len(rot) > 1 and not isinstance(rot[1], (list, tuple, dict)) else 0
+                r_val = int(rot[2]) if len(rot) > 2 and not isinstance(rot[2], (list, tuple, dict)) else 0
                 dir_vec = ue2_rotator_to_direction_vector(p_val, y_val, r_val)
                 tex_mod = props.get("TexModifyInfo", {})
                 color = tex_mod.get("Color", [255, 245, 230, 255])
@@ -169,20 +171,28 @@ def extract_map_environment(
 
             # 4. SkyZoneInfo
             elif c_name == "SkyZoneInfo" and env_data["sky_info"] is None:
-                loc = props.get("Location", [0.0, 0.0, 0.0])
+                loc = props.get("Location", (0.0, 0.0, 0.0))
+                if isinstance(loc, dict) and loc.get("_is_array"):
+                    loc = loc.get(0, (0.0, 0.0, 0.0))
+                lx = float(loc[0]) if len(loc) > 0 else 0.0
+                ly = float(loc[1]) if len(loc) > 1 else 0.0
+                lz = float(loc[2]) if len(loc) > 2 else 0.0
                 env_data["sky_info"] = {
                     "name": o_name,
                     "camera_location_m": [
-                        round(loc[0] * unit_scale, 2),
-                        round(loc[2] * unit_scale, 2),
-                        round(loc[1] * unit_scale, 2),
+                        round(lx * unit_scale, 2),
+                        round(lz * unit_scale, 2),
+                        round(ly * unit_scale, 2),
                     ],
                 }
 
             # 5. WaterVolume
             elif c_name == "WaterVolume":
-                loc = props.get("Location", [0.0, 0.0, 0.0])
-                water_z = loc[2] * unit_scale if len(loc) > 2 else -10.0
+                loc = props.get("Location", (0.0, 0.0, 0.0))
+                if isinstance(loc, dict) and loc.get("_is_array"):
+                    loc = loc.get(0, (0.0, 0.0, 0.0))
+                lz = float(loc[2]) if len(loc) > 2 else -10.0
+                water_z = lz * unit_scale
                 env_data["water_volumes"].append(
                     {
                         "name": o_name,

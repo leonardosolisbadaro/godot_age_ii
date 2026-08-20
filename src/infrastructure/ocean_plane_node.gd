@@ -13,13 +13,15 @@ extends MeshInstance3D
 
 const OceanShader = preload("res://src/infrastructure/shaders/ocean_water.gdshader")
 
-var water_level_y: float = 0.0
-var plane_size: Vector2 = Vector2(2000.0, 2000.0)
+var water_level_y: float = -290.0
+var plane_size: Vector2 = Vector2(5000.0, 5000.0)
+var center_pos: Vector3 = Vector3.ZERO
 
 
-func _init(p_water_level: float = 0.0, p_size: Vector2 = Vector2(2000.0, 2000.0)) -> void:
+func _init(p_water_level: float = -290.0, p_size: Vector2 = Vector2(5000.0, 5000.0), p_center: Vector3 = Vector3.ZERO) -> void:
 	water_level_y = p_water_level
 	plane_size = p_size
+	center_pos = p_center
 
 
 func _ready() -> void:
@@ -37,4 +39,4 @@ func build_ocean_plane() -> void:
 	mat.shader = OceanShader
 	material_override = mat
 
-	position = Vector3(0.0, water_level_y, 0.0)
+	position = Vector3(center_pos.x, water_level_y, center_pos.z)

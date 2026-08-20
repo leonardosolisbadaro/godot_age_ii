@@ -532,11 +532,14 @@ class UnrealPackageReader:
                         if img:
                             return img
 
-                # 5. G16 / Heightfield 16-bit (Format 8 ou 131072 bytes para 256x256)
+                # 5. G16 / Heightfield 16-bit
+                g16_sz = rw * rh * 2
                 if format_val == 8 or (rw == 256 and rh == 256 and pos >= 131072):
-                    g16_raw = exp_data[pos - 131072 : pos]
-                    arr = np.frombuffer(g16_raw, dtype="<u2").reshape((rh, rw))
-                    return Image.fromarray(arr)
+                    if pos >= g16_sz:
+                        g16_raw = exp_data[pos - g16_sz : pos]
+                        if len(g16_raw) == g16_sz:
+                            arr = np.frombuffer(g16_raw, dtype="<u2").reshape((rh, rw))
+                            return Image.fromarray(arr)
 
                 # 6. G8 / Grayscale
                 g8_sz = rw * rh

@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode cull_back, diffuse_burley, specular_schlick_ggx;
+render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 
 // --- Configuração Global de Tiling e Iluminação ---
 uniform float base_tiling : hint_range(1.0, 128.0) = 32.0;

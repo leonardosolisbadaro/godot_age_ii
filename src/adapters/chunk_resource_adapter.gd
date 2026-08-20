@@ -56,14 +56,43 @@ func load_environment_recipe_dict(chunk_name: String) -> Dictionary:
 
 
 func load_static_actors_array(chunk_name: String, is_server: bool = false) -> Array:
+	var root_path = "%s/%s/chunk_static_actors.json" % [base_maps_path, chunk_name]
 	var subfolder = "server" if is_server else "client"
-	var path = "%s/%s/%s/chunk_static_actors.json" % [base_maps_path, chunk_name, subfolder]
-	var data = _read_json_raw(path)
+	var sub_path = "%s/%s/%s/chunk_static_actors.json" % [base_maps_path, chunk_name, subfolder]
+
+	var main_path = root_path if FileAccess.file_exists(root_path) else sub_path
+	var data = _read_json_raw(main_path)
+	var actors: Array = []
 	if data is Array:
-		return data
+		actors = data
 	elif data is Dictionary and data.has("actors") and data["actors"] is Array:
-		return data["actors"]
-	return []
+		actors = data["actors"]
+
+	# Aplica overrides manuais de chunk_static_actors_fix.json se existir
+	var fix_path = "%s/%s/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
+	if FileAccess.file_exists(fix_path):
+		var fix_data = _read_json_raw(fix_path)
+		var fixes: Array = []
+		if fix_data is Array:
+			fixes = fix_data
+		elif fix_data is Dictionary and fix_data.has("actors") and fix_data["actors"] is Array:
+			fixes = fix_data["actors"]
+
+		var fix_map = {}
+		for f in fixes:
+			if f is Dictionary and f.has("actor_name"):
+				fix_map[f["actor_name"]] = f
+
+		for a in actors:
+			if a is Dictionary and a.has("actor_name") and fix_map.has(a["actor_name"]):
+				var override = fix_map[a["actor_name"]]
+				if override.has("transform") and override["transform"] is Dictionary and a.has("transform") and a["transform"] is Dictionary:
+					for k in override["transform"].keys():
+						a["transform"][k] = override["transform"][k]
+				if override.has("mesh_ref"):
+					a["mesh_ref"] = override["mesh_ref"]
+
+	return actors
 
 
 func load_material_recipes_dict(chunk_name: String) -> Dictionary:

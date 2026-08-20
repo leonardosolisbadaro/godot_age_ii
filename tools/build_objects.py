@@ -101,13 +101,37 @@ def gltf_to_glb(gltf_path: Path, glb_path: Path) -> bool:
                 old_to_new_acc[old_idx] = len(new_accessors)
                 new_accessors.append(acc)
 
-        # 3. Remapeia os índices de accessors em todas as primitivas válidas
+        # 3. Remapeia os índices de accessors em todas as primitivas válidas e escala os vértices por 8.0x
+        bin_data_mut = bytearray(bin_data)
+        scale_factor = 8.0  # Converte de 0.01m (UModel) para 0.08m (Lineage II canônico)
+        scaled_bv_indices = set()
+
         for prim in valid_primitives:
             if "indices" in prim:
                 prim["indices"] = old_to_new_acc[prim["indices"]]
             for attr_name, old_acc in list(prim.get("attributes", {}).items()):
-                prim["attributes"][attr_name] = old_to_new_acc[old_acc]
+                new_acc_idx = old_to_new_acc[old_acc]
+                prim["attributes"][attr_name] = new_acc_idx
+                if attr_name == "POSITION":
+                    acc = new_accessors[new_acc_idx]
+                    bv_idx = acc["bufferView"]
+                    if bv_idx not in scaled_bv_indices:
+                        scaled_bv_indices.add(bv_idx)
+                        bv = gltf_copy["bufferViews"][bv_idx]
+                        b_off = bv.get("byteOffset", 0) + acc.get("byteOffset", 0)
+                        stride = bv.get("byteStride", 12)
+                        cnt = acc.get("count", 0)
+                        for i in range(cnt):
+                            p_curr = b_off + i * stride
+                            if p_curr + 12 <= len(bin_data_mut):
+                                x, y, z = struct.unpack_from("<fff", bin_data_mut, p_curr)
+                                struct.pack_into("<fff", bin_data_mut, p_curr, x * scale_factor, y * scale_factor, z * scale_factor)
+                    if "min" in acc:
+                        acc["min"] = [v * scale_factor for v in acc["min"]]
+                    if "max" in acc:
+                        acc["max"] = [v * scale_factor for v in acc["max"]]
 
+        bin_data = bytes(bin_data_mut)
         mesh["primitives"] = valid_primitives
         gltf_copy["accessors"] = new_accessors
 
@@ -232,8 +256,15 @@ def process_chunk_objects(
         print(f"[ERRO] Mapa .unr não encontrado: {map_name_or_path}")
         return {}
 
+    # Carrega heightfield compilado se disponível para assentamento de altitude
+    hf = None
+    hf_path = maps_dir / clean_name / "server" / "heightfield.bin"
+    if hf_path.is_file():
+        import numpy as np
+        hf = np.fromfile(hf_path, dtype="<f4").reshape((256, 256))
+
     map_pkg = UnrealPackageReader(map_path)
-    actors = extract_map_static_actors(map_pkg, unit_scale)
+    actors = extract_map_static_actors(map_pkg, unit_scale, heightfield=hf)
     print(f"\n[+] Chunk {clean_name}: {len(actors)} StaticMeshActors encontrados.")
 
     needed_meshes = set()
@@ -259,11 +290,33 @@ def process_chunk_objects(
 
     print(f"    -> Total de malhas 3D (.glb) compiladas: {extracted_count}")
 
-    # Salva chunk_static_actors.json para Cliente e Servidor
-    chunk_client_dir = maps_dir / clean_name / "client"
-    chunk_server_dir = maps_dir / clean_name / "server"
-    chunk_client_dir.mkdir(parents=True, exist_ok=True)
-    chunk_server_dir.mkdir(parents=True, exist_ok=True)
+    # Aplica overrides manuais se chunk_static_actors_fix.json existir
+    chunk_root = maps_dir / clean_name
+    fix_json_path = chunk_root / "chunk_static_actors_fix.json"
+    if fix_json_path.is_file():
+        try:
+            with open(fix_json_path, "r", encoding="utf-8") as f:
+                fix_data = json.load(f)
+            fix_actors = fix_data.get("actors", [])
+            fix_map = {a.get("actor_name"): a for a in fix_actors if a.get("actor_name")}
+            applied_fixes = 0
+            for a in actors:
+                a_name = a.get("actor_name")
+                if a_name in fix_map:
+                    override = fix_map[a_name]
+                    if "transform" in override:
+                        for k, v in override["transform"].items():
+                            a["transform"][k] = v
+                    if "mesh_ref" in override:
+                        a["mesh_ref"] = override["mesh_ref"]
+                    applied_fixes += 1
+            if applied_fixes > 0:
+                print(f"    -> [+] {applied_fixes} override(s) manual(is) aplicado(s) de: {fix_json_path.name}")
+        except Exception as e:
+            print(f"    -> [AVISO] Falha ao ler overrides de {fix_json_path.name}: {e}")
+
+    # Salva chunk_static_actors.json exclusivamente na Raiz do Chunk
+    chunk_root.mkdir(parents=True, exist_ok=True)
 
     actors_meta = {
         "chunk_name": clean_name,
@@ -272,15 +325,11 @@ def process_chunk_objects(
         "actors": actors,
     }
 
-    client_json = chunk_client_dir / "chunk_static_actors.json"
-    server_json = chunk_server_dir / "chunk_static_actors.json"
-
-    with open(client_json, "w", encoding="utf-8") as f:
-        json.dump(actors_meta, f, indent=4)
-    with open(server_json, "w", encoding="utf-8") as f:
+    root_json = chunk_root / "chunk_static_actors.json"
+    with open(root_json, "w", encoding="utf-8") as f:
         json.dump(actors_meta, f, indent=4)
 
-    print(f"    -> Salvo instâncias em: {client_json.name} e {server_json.name}")
+    print(f"    -> Salvo metadados unificados em: {root_json.name}")
     return actors_meta
 
 

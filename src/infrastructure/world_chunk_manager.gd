@@ -75,6 +75,9 @@ func load_chunk(chunk_name: String) -> void:
 	# Instancia Terreno Visual
 	var terrain_node = L2TerrainChunkNodeClass.new(chunk_name, base_maps_path)
 	terrain_node.name = "Terrain_%s" % chunk_name
+	var chunk_data = _known_chunks.get(chunk_name)
+	if chunk_data:
+		terrain_node.position = chunk_data.world_origin
 	add_child(terrain_node)
 	_active_terrain_nodes[chunk_name] = terrain_node
 
@@ -97,9 +100,9 @@ func unload_chunk(chunk_name: String) -> void:
 		m_node.queue_free()
 
 
-func setup_ocean(water_level_y: float = 0.0) -> void:
+func setup_ocean(water_level_y: float = -290.0, center: Vector3 = Vector3(-7864.0, 0.0, 18350.0)) -> void:
 	if not _ocean_node:
-		_ocean_node = OceanPlaneNodeClass.new(water_level_y, Vector2(5000.0, 5000.0))
+		_ocean_node = OceanPlaneNodeClass.new(water_level_y, Vector2(5000.0, 5000.0), center)
 		_ocean_node.name = "OceanPlane"
 		add_child(_ocean_node)
 

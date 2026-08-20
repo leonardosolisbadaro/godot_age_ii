@@ -69,8 +69,9 @@ def strip_to_triangles(strip_indices: list) -> list:
 class StaticMeshParser:
     """Parser para malhas estáticas UStaticMesh da Unreal Engine 2."""
 
-    def __init__(self, package: UnrealPackageReader):
+    def __init__(self, package: UnrealPackageReader, unit_scale: float = 0.08):
         self.pkg = package
+        self.unit_scale = unit_scale
 
     def extract_mesh_by_export(self, exp: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Decodifica malha canônica com streams precisos de vértices, normais, UVs e index buffers."""
@@ -292,11 +293,11 @@ class StaticMeshParser:
         triangles_wound[:, 1] = triangles[:, 2]
         triangles_wound[:, 2] = triangles[:, 1]
 
-        # Conversão canônica do UModel para glTF/Godot (Exchange Y e Z, escala 0.01m)
+        # Conversão canônica do UModel para glTF/Godot (Exchange Y e Z, escala unit_scale em metros)
         positions_transformed = np.zeros_like(positions_arr)
-        positions_transformed[:, 0] = positions_arr[:, 0] * 0.01
-        positions_transformed[:, 1] = positions_arr[:, 2] * 0.01
-        positions_transformed[:, 2] = positions_arr[:, 1] * 0.01
+        positions_transformed[:, 0] = positions_arr[:, 0] * self.unit_scale
+        positions_transformed[:, 1] = positions_arr[:, 2] * self.unit_scale
+        positions_transformed[:, 2] = positions_arr[:, 1] * self.unit_scale
 
         normals_transformed = np.zeros_like(normals_arr)
         normals_transformed[:, 0] = normals_arr[:, 0]
@@ -328,9 +329,34 @@ class StaticMeshParser:
 
 
 def extract_map_static_actors(
-    map_package: UnrealPackageReader, unit_scale: float = UU_TO_METERS_DEFAULT
+    map_package: UnrealPackageReader,
+    unit_scale: float = UU_TO_METERS_DEFAULT,
+    heightfield: Optional[np.ndarray] = None,
 ) -> List[Dict[str, Any]]:
-    """Extrai todas as instâncias de StaticMeshActor de um mapa .unr."""
+    """Extrai todas as instâncias de StaticMeshActor de um mapa .unr sincronizadas com o terreno."""
+    # Obtém limites espaciais do TerrainInfo
+    min_x = 0.0
+    min_z = 0.0
+    chunk_w = 2621.44
+    chunk_d = 2621.44
+
+    for exp in map_package.exports:
+        if exp["class_name"] == "TerrainInfo":
+            p_start = map_package.find_properties_start(exp["offset"], exp["size"])
+            t_props = map_package.read_properties(
+                p_start, exp["size"] - (p_start - exp["offset"])
+            )
+            t_loc = t_props.get("Location", (0.0, 0.0, 0.0))
+            t_scale = t_props.get("TerrainScale", (128.0, 128.0, 76.0))
+            chunk_w = 256.0 * float(t_scale[0]) * unit_scale
+            chunk_d = 256.0 * float(t_scale[1]) * unit_scale
+            min_x = float(t_loc[0]) * unit_scale
+            min_z = float(t_loc[1]) * unit_scale
+            break
+
+    max_x = min_x + chunk_w
+    max_z = min_z + chunk_d
+
     actors = []
     for exp in map_package.exports:
         if exp["class_name"] == "StaticMeshActor":
@@ -353,9 +379,13 @@ def extract_map_static_actors(
                 draw_scale3d = draw_scale3d.get(0, (1.0, 1.0, 1.0))
 
             # Converte coordenadas para o sistema de coordenadas métrico do Godot
-            loc_x = float(location[0]) * unit_scale
-            loc_y = float(location[2]) * unit_scale  # Em Godot, Y é altura vertical
-            loc_z = float(location[1]) * unit_scale  # Em Godot, Z é profundidade horizontal
+            # No UE2, as coordenadas dos atores nos pacotes .unr possuem offset de meio-chunk (+16384 UU = +1310.72m)
+            # em relação ao corner de TerrainInfo.
+            half_chunk_w = chunk_w / 2.0
+            half_chunk_d = chunk_d / 2.0
+            loc_x = (float(location[0]) * unit_scale) + half_chunk_w
+            loc_y = float(location[2]) * unit_scale
+            loc_z = (float(location[1]) * unit_scale) + half_chunk_d
 
             # Converte rotações
             p, y, r = (

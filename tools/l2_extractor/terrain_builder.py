@@ -60,8 +60,8 @@ def build_terrain_mesh(
 
     grid_x, grid_z = np.meshgrid(xs, zs)
 
-    # Altitude mundial em metros calibrada com a escala vertical da UE2
-    world_y = ((heights.astype(np.float32) - 32768.0) * (sy_scale / 280.0)) + loc_z
+    # Altitude mundial em metros calibrada com a fórmula canônica da UE2 para heightmaps 16-bit G16
+    world_y = ((heights.astype(np.float32) - 32768.0) * (sy_scale / 256.0)) + loc_z
 
     # Cálculo de normais de superfície com espaçamento real entre vértices
     dx_eff = (2.0 * half_w) / max(1, cols - 1)
@@ -389,14 +389,14 @@ class TerrainChunkCompiler:
             start = ci_pos + len(ci_131072)
             end = start + 131072
             if end + 10 <= len(exp_data) and exp_data[end : end + 10] == footer_256:
-                return np.frombuffer(exp_data[start:end], dtype="<u2").reshape(
-                    (256, 256)
-                )
+                arr = np.frombuffer(exp_data[start:end], dtype="<u2").reshape((256, 256))
+                return arr.copy()
 
         pos = exp_data.rfind(footer_256)
         if pos >= 131072:
             raw_bytes = exp_data[pos - 131072 : pos]
-            return np.frombuffer(raw_bytes, dtype="<u2").reshape((256, 256))
+            arr = np.frombuffer(raw_bytes, dtype="<u2").reshape((256, 256))
+            return arr.copy()
         return None
 
     def generate_server_artifacts(

@@ -13,6 +13,7 @@ extends Node3D
 
 const TerrainShader = preload("res://src/infrastructure/shaders/l2_terrain.gdshader")
 const ChunkResourceAdapterClass = preload("res://src/adapters/chunk_resource_adapter.gd")
+const TerrainChunkAdapterClass = preload("res://src/adapters/terrain_chunk_adapter.gd")
 
 var chunk_name: String = ""
 var base_maps_path: String = "res://assets/maps"
@@ -33,15 +34,13 @@ func _ready() -> void:
 
 
 func build_chunk_node() -> void:
-	# 1. Carrega cena visual .glb do chunk
-	var visual_glb_path = "%s/%s/client/%s_visual.glb" % [base_maps_path, chunk_name, chunk_name]
-	if ResourceLoader.exists(visual_glb_path):
-		var scene_res = load(visual_glb_path)
-		if scene_res and scene_res is PackedScene:
-			_visual_instance = scene_res.instantiate()
-			add_child(_visual_instance)
-			_setup_material_and_textures()
-			_setup_physics_collision()
+	# 1. Carrega cena visual .glb do chunk via TerrainChunkAdapter
+	var adapter = TerrainChunkAdapterClass.new()
+	_visual_instance = adapter.load_visual_mesh_node(chunk_name, base_maps_path)
+	if _visual_instance:
+		add_child(_visual_instance)
+		_setup_material_and_textures()
+		_setup_physics_collision()
 
 
 func _setup_material_and_textures() -> void:
@@ -54,17 +53,48 @@ func _setup_material_and_textures() -> void:
 	var client_dir = "%s/%s/client" % [base_maps_path, chunk_name]
 
 	# Splatmaps
-	if ResourceLoader.exists("%s/splatmap_0.png" % client_dir):
-		mat.set_shader_parameter("splatmap_0", load("%s/splatmap_0.png" % client_dir))
-	if ResourceLoader.exists("%s/splatmap_1.png" % client_dir):
-		mat.set_shader_parameter("splatmap_1", load("%s/splatmap_1.png" % client_dir))
+	var splat0 = _load_texture("%s/splatmap_0.png" % client_dir)
+	if splat0:
+		mat.set_shader_parameter("splatmap_0", splat0)
+	var splat1 = _load_texture("%s/splatmap_1.png" % client_dir)
+	if splat1:
+		mat.set_shader_parameter("splatmap_1", splat1)
 
 	# Textura Base
-	if ResourceLoader.exists("%s/textures/layer_0_tex_Base.png" % client_dir):
-		mat.set_shader_parameter("tex_base", load("%s/textures/layer_0_tex_Base.png" % client_dir))
+	var base_tex = _load_texture("%s/textures/layer_0_tex_Base.png" % client_dir)
+	if base_tex:
+		mat.set_shader_parameter("tex_base", base_tex)
+
+	# Camadas 1 a 8
+	var da = DirAccess.open("%s/textures" % client_dir)
+	if da:
+		da.list_dir_begin()
+		var file_name = da.get_next()
+		while not file_name.is_empty():
+			if not da.current_is_dir() and file_name.ends_with(".png"):
+				for i in range(1, 9):
+					if file_name.begins_with("layer_%d_" % i):
+						var tex_path = "%s/textures/%s" % [client_dir, file_name]
+						var layer_tex = _load_texture(tex_path)
+						if layer_tex:
+							mat.set_shader_parameter("has_layer_%d" % i, true)
+							mat.set_shader_parameter("tex_layer_%d" % i, layer_tex)
+			file_name = da.get_next()
 
 	# Aplica o material em todos os MeshInstance3D filhos
 	_apply_material_recursive(_visual_instance, mat)
+
+
+func _load_texture(path: String) -> Texture2D:
+	if ResourceLoader.exists(path):
+		var res = load(path)
+		if res is Texture2D:
+			return res
+	if FileAccess.file_exists(path):
+		var img = Image.load_from_file(path)
+		if img and not img.is_empty():
+			return ImageTexture.create_from_image(img)
+	return null
 
 
 func _apply_material_recursive(node: Node, mat: Material) -> void:

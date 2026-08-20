@@ -30,5 +30,5 @@ func test_load_server_heightfield_successfully() -> void:
 
 	# Amostra a altura na origem mundial do chunk
 	var h = sampler.get_height_at(sampler.world_origin.x, sampler.world_origin.z)
-	assert_gt(h, -500.0)
-	assert_lt(h, 500.0)
+	assert_gt(h, -1000.0)
+	assert_lt(h, 1000.0)

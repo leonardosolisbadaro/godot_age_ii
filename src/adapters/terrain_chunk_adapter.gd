@@ -18,12 +18,20 @@ func get_visual_glb_path(chunk_name: String, base_path: String = "res://assets/m
 
 func load_visual_mesh_node(chunk_name: String, base_path: String = "res://assets/maps") -> Node3D:
 	var path = get_visual_glb_path(chunk_name, base_path)
-	if not ResourceLoader.exists(path):
+	if not FileAccess.file_exists(path) and not ResourceLoader.exists(path):
 		return null
 
-	var scene_res = load(path)
-	if scene_res and scene_res is PackedScene:
-		var instance = scene_res.instantiate()
-		return instance as Node3D
+	if ResourceLoader.exists(path):
+		var scene_res = load(path)
+		if scene_res and scene_res is PackedScene:
+			return scene_res.instantiate() as Node3D
+
+	# Fallback nativo via GLTFDocument para carregamento direto do binário .glb
+	var gltf_doc = GLTFDocument.new()
+	var gltf_state = GLTFState.new()
+	var err = gltf_doc.append_from_file(path, gltf_state)
+	if err == OK:
+		var scene = gltf_doc.generate_scene(gltf_state)
+		return scene as Node3D
 
 	return null

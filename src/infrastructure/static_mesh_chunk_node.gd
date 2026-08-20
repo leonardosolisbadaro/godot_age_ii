@@ -51,17 +51,26 @@ func build_static_meshes() -> void:
 
 
 func _load_mesh_resource(mesh_path: String) -> Mesh:
-	if not ResourceLoader.exists(mesh_path):
-		return null
+	if ResourceLoader.exists(mesh_path):
+		var scene_res = load(mesh_path)
+		if scene_res is PackedScene:
+			var temp_node = scene_res.instantiate()
+			var mesh = _extract_mesh_from_node(temp_node)
+			temp_node.free()
+			return mesh
+		elif scene_res is Mesh:
+			return scene_res
 
-	var scene_res = load(mesh_path)
-	if scene_res is PackedScene:
-		var temp_node = scene_res.instantiate()
-		var mesh = _extract_mesh_from_node(temp_node)
-		temp_node.free()
-		return mesh
-	elif scene_res is Mesh:
-		return scene_res
+	if FileAccess.file_exists(mesh_path):
+		var gltf_doc = GLTFDocument.new()
+		var gltf_state = GLTFState.new()
+		var err = gltf_doc.append_from_file(mesh_path, gltf_state)
+		if err == OK:
+			var temp_node = gltf_doc.generate_scene(gltf_state)
+			if temp_node:
+				var mesh = _extract_mesh_from_node(temp_node)
+				temp_node.free()
+				return mesh
 
 	return null
 

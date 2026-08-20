@@ -101,9 +101,27 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
 
 ---
 
-## Fase 5: Automação, Build em Lote e Validação
+## Fase 5: Integração, Automação e Validação Interativa
 
-- [ ] Atualizar `build_maps.ps1` com suporte à extração unificada de Terreno + StaticMeshes + Texturas + Água.
-- [ ] Criar ferramenta de inspeção visual in-game (Alternância F2 Wireframe, F3 HUD de Coordenadas/Chunk, F4 Colisão).
-- [ ] Validação comparativa 1:1 de Talking Island (Chunks `16_24`, `16_25`, `17_24`, `17_25`) contra o mapa original.
+- [x] **5.1 Orquestração da Cena Principal (`main.gd` / `main.tscn`)**
+  - [x] Integrar `WorldChunkManager` com registro e streaming de chunks (`16_24` inicial e cluster de Talking Island).
+  - [x] Integrar `EnvironmentZoneAdapter` para carregar `environment_recipe.json` (Sol `DirectionalLight3D`, céu e `WorldEnvironment`).
+  - [x] Integrar `OceanPlaneNode` nas cotas de água reais ($Z = 0.00\text{m}$).
+  - [x] Instanciar `PlayerAvatar` no ponto de spawn seguro de Talking Island com câmera orbital em 3ª pessoa.
+  - [x] Instanciar `DebugHUD` e conectar atualização de telemetria em tempo real no `_process()`.
+  - [x] Implementar atalhos de teclado: `F2` (Wireframe / Overdraw / Desativado), `F3` (Toggle HUD) e encerramento limpo via `_notification()`.
+  - [x] Suporte à execução dual: Cliente Gráfico (padrão) vs Servidor Headless (`--server`).
+
+- [ ] **5.2 Script de Build em Lote e Automação de Chunks (`build_maps.ps1`)**
+  - [ ] Atualizar script PowerShell para compilar em lote o cluster completo de Talking Island (`16_24`, `16_25`, `17_24`, `17_25`).
+  - [ ] Unificar a cadeia de execução CLI: `build_terrain.py` $\to$ `build_objects.py` $\to$ `build_environment.py`.
+  - [ ] Adicionar suporte a flags `--force`, logs de progresso e resumo estatístico de extração.
+
+- [ ] **5.3 Validação Interativa e Testes Manuais no Godot 4.7**
+  - [ ] Teste de navegação e colisão do avatar pelo relevo (caminhada, corrida com Shift, rampas e colinas).
+  - [ ] Teste de colisão e oclusão de atores estáticos (árvores `speaking_tree_s`, cercas `woodfence`, pedras e casas).
+  - [ ] Teste de visualização de Shaders (blending multi-camada de splatmaps, transparência *Alpha Scissor* e *Two-Sided* em folhagens).
+  - [ ] Teste de transição aquática no plano de oceano ($Z = 0.00\text{m}$) e profundidade.
+  - [ ] Teste de telemetria do `DebugHUD` e alternador de Wireframe (`F2`).
+  - [ ] Teste de conectividade e sincronização de rede QuanticNet (Host / Join local).
 
