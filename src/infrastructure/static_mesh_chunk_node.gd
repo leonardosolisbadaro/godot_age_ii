@@ -67,6 +67,9 @@ var _material_recipes: Dictionary = { }
 var _material_cache: Dictionary = { }
 var _loaded_meshes: Array[Mesh] = []
 var _parsed_instances: Array = []
+var _raw_instance_transforms: Dictionary = { }
+var _actor_multimesh_index: Dictionary = { }
+var _collision_shape_map: Dictionary = { }
 
 
 func _init(p_chunk_name: String = "", p_base_path: String = "res://assets/maps") -> void:
@@ -80,9 +83,14 @@ func _ready() -> void:
 
 
 var _collision_rules: Dictionary = { }
+var _is_built: bool = false
 
 
 func build_static_meshes() -> void:
+	if _is_built:
+		return
+	_is_built = true
+
 	var resource_adapter = ChunkResourceAdapterClass.new(base_maps_path)
 	_material_recipes = resource_adapter.load_material_recipes_dict(chunk_name)
 	_collision_rules = resource_adapter.load_collision_rules_dict()
@@ -93,6 +101,18 @@ func build_static_meshes() -> void:
 
 	var inst_adapter = StaticMeshInstanceAdapterClass.new()
 	_parsed_instances = inst_adapter.parse_actor_dictionaries(actors_raw)
+	for inst in _parsed_instances:
+		if inst is StaticMeshInstanceDataClass:
+			_raw_instance_transforms[inst.actor_name] = {
+				"position": inst.position,
+				"rotation_degrees": Vector3(
+					rad_to_deg(inst.rotation_radians.x),
+					rad_to_deg(inst.rotation_radians.y),
+					rad_to_deg(inst.rotation_radians.z)
+				),
+				"scale": inst.scale,
+			}
+
 	var groups = inst_adapter.group_by_mesh_path(_parsed_instances)
 
 	for mesh_path in groups.keys():
@@ -104,6 +124,14 @@ func build_static_meshes() -> void:
 			_apply_materials_to_mesh(mesh)
 			var mm_node = inst_adapter.create_multimesh_instance(mesh, instances)
 			if mm_node:
+				for idx in range(instances.size()):
+					var inst_item = instances[idx]
+					if inst_item is StaticMeshInstanceDataClass:
+						_actor_multimesh_index[inst_item.actor_name] = {
+							"multimesh": mm_node.multimesh,
+							"index": idx,
+						}
+
 				# Otimização de Sombras e Culling em Folhagens/Vegetação
 				if _is_foliage_or_small_vegetation(mesh_path, instances):
 					mm_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -224,6 +252,7 @@ func _setup_static_mesh_collisions(groups: Dictionary) -> void:
 			var shape_node = CollisionShape3D.new()
 			shape_node.shape = shape
 			shape_node.transform = inst.get_transform()
+			_collision_shape_map[inst.actor_name] = shape_node
 			body.add_child(shape_node)
 
 	if body.get_child_count() > 0:
@@ -444,3 +473,99 @@ func _check_texture_status(mat_name: String) -> Dictionary:
 				return { "status": "OK (Fallback)", "path": p }
 
 	return { "status": "MISSING", "path": "" }
+
+
+func get_actors_in_radius(center: Vector3, radius: float) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var r_sq = radius * radius
+
+	for inst in _parsed_instances:
+		if not (inst is StaticMeshInstanceDataClass):
+			continue
+
+		# Cálculo Cilíndrico 2D no plano horizontal (X, Z)
+		var dx = inst.position.x - center.x
+		var dz = inst.position.z - center.z
+		var horiz_dist_sq = (dx * dx) + (dz * dz)
+
+		if horiz_dist_sq <= r_sq:
+			var mesh_path = inst.mesh_resource_path
+			var mesh = _load_mesh_resource(mesh_path)
+			var classif = _classify_collision_type(mesh_path, inst)
+			var c_type = classif.get("type", "convex")
+			var mesh_pkg = ""
+			if "/models/" in mesh_path:
+				var parts = mesh_path.split("/models/")[1].split("/")
+				if parts.size() > 0:
+					mesh_pkg = parts[0]
+
+			result.append(
+				{
+					"actor_name": inst.actor_name,
+					"mesh_name": inst.mesh_name,
+					"package_name": mesh_pkg,
+					"full_path": inst.properties.get("full_path", inst.mesh_resource_path),
+					"position": inst.position,
+					"transform": inst.get_transform(),
+					"mesh": mesh,
+					"aabb": inst.get_world_aabb(),
+					"classification_type": c_type,
+					"distance": sqrt(horiz_dist_sq),
+				}
+			)
+
+	return result
+
+
+func update_actor_transform(
+	actor_name: String,
+	new_pos: Vector3,
+	new_rot_deg: Vector3,
+	new_scale: Vector3
+) -> Dictionary:
+	for inst in _parsed_instances:
+		if not (inst is StaticMeshInstanceDataClass):
+			continue
+		if inst.actor_name == actor_name:
+			inst.position = new_pos
+			inst.rotation_radians = Vector3(
+				deg_to_rad(new_rot_deg.x),
+				deg_to_rad(new_rot_deg.y),
+				deg_to_rad(new_rot_deg.z)
+			)
+			inst.scale = new_scale
+			var new_xform = inst.get_transform()
+
+			# Atualiza MultiMeshInstance3D
+			if _actor_multimesh_index.has(actor_name):
+				var info = _actor_multimesh_index[actor_name]
+				var mm: MultiMesh = info.get("multimesh", null)
+				if mm:
+					var idx = int(info.get("index", 0))
+					mm.set_instance_transform(idx, new_xform)
+					if mm.get_rid().is_valid():
+						RenderingServer.multimesh_instance_set_transform(mm.get_rid(), idx, new_xform)
+
+			# Atualiza CollisionShape3D
+			if _collision_shape_map.has(actor_name):
+				var shape_node: CollisionShape3D = _collision_shape_map[actor_name]
+				if shape_node:
+					shape_node.transform = new_xform
+
+			return {
+				"found": true,
+				"actor_name": actor_name,
+				"mesh_name": inst.mesh_name,
+				"position": new_pos,
+				"rotation_degrees": new_rot_deg,
+				"scale": new_scale,
+				"transform": new_xform,
+				"aabb": inst.get_world_aabb(),
+				"mesh": _load_mesh_resource(inst.mesh_resource_path),
+			}
+
+	return { "found": false }
+
+
+func get_raw_actor_data(actor_name: String) -> Dictionary:
+	return _raw_instance_transforms.get(actor_name, { })

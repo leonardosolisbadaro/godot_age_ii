@@ -26,9 +26,10 @@ func execute(world_pos: Vector3, env_data: EnvironmentZoneDataClass) -> Dictiona
 	var depth = env_data.get_water_depth_at(world_pos)
 	var primary_level = 0.0
 
-	for wv in env_data.water_volumes:
+	for v_name in env_data.water_volumes.keys():
+		var wv = env_data.water_volumes[v_name]
 		if wv is Dictionary:
-			primary_level = float(wv.get("water_z_meters", wv.get("water_plane_height_m", 0.0)))
+			primary_level = float(wv.get("water_z_meters", wv.get("water_plane_height_m", wv.get("surface_y_m", 0.0))))
 			break
 
 	return {

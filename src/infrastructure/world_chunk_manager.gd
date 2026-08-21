@@ -218,3 +218,106 @@ func inspect_object_at_ray(ray_origin: Vector3, ray_dir: Vector3) -> Dictionary:
 
 func get_active_chunk_count() -> int:
 	return _active_terrain_nodes.size()
+
+
+func get_static_actors_in_radius(center_pos: Vector3, radius: float) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+
+	for m_node in _active_mesh_nodes.values():
+		if m_node and m_node.has_method("get_actors_in_radius"):
+			var chunk_actors = m_node.get_actors_in_radius(center_pos, radius)
+			result.append_array(chunk_actors)
+
+	result.sort_custom(func(a, b): return a.get("distance", 0.0) < b.get("distance", 0.0))
+	return result
+
+
+func update_static_actor_transform(
+	actor_name: String,
+	new_pos: Vector3,
+	new_rot_deg: Vector3,
+	new_scale: Vector3
+) -> Dictionary:
+	for m_node in _active_mesh_nodes.values():
+		if m_node and m_node.has_method("update_actor_transform"):
+			var res = m_node.update_actor_transform(actor_name, new_pos, new_rot_deg, new_scale)
+			if res.get("found", false):
+				res["chunk_name"] = m_node.chunk_name
+				return res
+	return { "found": false }
+
+
+func get_raw_actor_data(actor_name: String) -> Dictionary:
+	for m_node in _active_mesh_nodes.values():
+		if m_node and m_node.has_method("get_raw_actor_data"):
+			var raw = m_node.get_raw_actor_data(actor_name)
+			if not raw.is_empty():
+				return raw
+	return { }
+
+
+func save_actor_fix(
+	actor_name: String,
+	new_pos: Vector3,
+	new_rot_deg: Vector3,
+	new_scale: Vector3
+) -> bool:
+	var target_chunk = ""
+	var raw_actor: Dictionary = { }
+	for m_node in _active_mesh_nodes.values():
+		if m_node and m_node.has_method("get_raw_actor_data"):
+			var raw = m_node.get_raw_actor_data(actor_name)
+			if not raw.is_empty():
+				target_chunk = m_node.chunk_name
+				raw_actor = raw
+				break
+
+	if target_chunk.is_empty():
+		return false
+
+	var fix_data = _resource_adapter.load_static_actors_fix_dict(target_chunk)
+	if not fix_data.has("actors") or not (fix_data["actors"] is Dictionary):
+		if fix_data.has("actors") and fix_data["actors"] is Array:
+			var actors_dict = { }
+			for a in fix_data["actors"]:
+				if a is Dictionary and a.has("actor_name"):
+					actors_dict[a["actor_name"]] = a
+			fix_data["actors"] = actors_dict
+		else:
+			fix_data["actors"] = { }
+
+	# Calcula estritamente o delta dos atributos alterados em relação ao raw
+	var transform_diff: Dictionary = { }
+	var raw_pos: Vector3 = raw_actor.get("position", Vector3.ZERO)
+	var raw_rot: Vector3 = raw_actor.get("rotation_degrees", Vector3.ZERO)
+	var raw_scl: Vector3 = raw_actor.get("scale", Vector3.ONE)
+
+	if not raw_pos.is_equal_approx(new_pos):
+		transform_diff["location_meters"] = [
+			snapped(new_pos.x, 0.001),
+			snapped(new_pos.y, 0.001),
+			snapped(new_pos.z, 0.001),
+		]
+
+	if not raw_rot.is_equal_approx(new_rot_deg):
+		transform_diff["rotation_degrees"] = [
+			snapped(new_rot_deg.x, 0.01),
+			snapped(new_rot_deg.y, 0.01),
+			snapped(new_rot_deg.z, 0.01),
+		]
+
+	if not raw_scl.is_equal_approx(new_scale):
+		transform_diff["scale"] = [
+			snapped(new_scale.x, 0.001),
+			snapped(new_scale.y, 0.001),
+			snapped(new_scale.z, 0.001),
+		]
+
+	if transform_diff.is_empty():
+		fix_data["actors"].erase(actor_name)
+	else:
+		fix_data["actors"][actor_name] = {
+			"transform": transform_diff,
+		}
+
+	return _resource_adapter.save_static_actors_fix(target_chunk, fix_data)

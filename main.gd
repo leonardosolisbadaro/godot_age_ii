@@ -22,6 +22,10 @@ const EnvironmentZoneDataClass = preload("res://src/domain/environment_zone_data
 const ChunkResourceAdapterClass = preload("res://src/adapters/chunk_resource_adapter.gd")
 const HeightfieldSamplerClass = preload("res://src/domain/heightfield_sampler.gd")
 const TerrainChunkDataClass = preload("res://src/domain/terrain_chunk_data.gd")
+const RadiusGizmoNodeClass = preload("res://src/infrastructure/radius_gizmo_node.gd")
+const MeshSelectionHighlighterClass = preload(
+	"res://src/infrastructure/mesh_selection_highlighter.gd"
+)
 
 # ==============================================================================
 # CONSTANTES SEMÂNTICAS DE REDE E MUNDO
@@ -94,6 +98,10 @@ var _resource_adapter: RefCounted
 var _env_adapter: RefCounted
 var _last_stream_pos: Vector3 = INITIAL_UNSTREAMED_POS
 var _wireframe_active: bool = false
+var _radius_gizmo: Node3D
+var _mesh_selection_highlighter: Node3D
+var _inspector_radius: float = 40.0
+var _inspector_timer: float = 0.0
 
 
 func _init() -> void:
@@ -168,9 +176,23 @@ func _start_client() -> void:
 	# 4. Instancia HUD de Telemetria
 	_debug_hud = DebugHUDClass.new()
 	_debug_hud.name = "DebugHUD"
+	_debug_hud.actor_selected.connect(_on_actor_selected_in_hud)
+	_debug_hud.actor_transform_applied.connect(_on_actor_transform_applied)
+	_debug_hud.actor_fix_saved.connect(_on_actor_fix_saved)
+	_debug_hud.actor_reset_requested.connect(_on_actor_reset_requested)
 	add_child(_debug_hud)
 
-	# 5. Conexão de Rede Opcional
+	# 5. Instancia Gizmo de Raio 3D e Highlighter de Seleção
+	_radius_gizmo = RadiusGizmoNodeClass.new(_inspector_radius)
+	_radius_gizmo.name = "RadiusGizmoNode"
+	_radius_gizmo.visible = false
+	add_child(_radius_gizmo)
+
+	_mesh_selection_highlighter = MeshSelectionHighlighterClass.new()
+	_mesh_selection_highlighter.name = "MeshSelectionHighlighter"
+	add_child(_mesh_selection_highlighter)
+
+	# 6. Conexão de Rede Opcional
 	if is_inside_tree():
 		var qn = get_node_or_null("/root/QuanticNet")
 		if qn and qn.has_method("join"):
@@ -227,7 +249,7 @@ func _setup_environment(chunk_name: String) -> void:
 		_world_environment.environment.fog_enabled = false
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _is_server or not _local_player:
 		return
 
@@ -238,6 +260,21 @@ func _process(_delta: float) -> void:
 	):
 		_last_stream_pos = _local_player.position
 		_world_chunk_manager.update_streaming(_local_player.position, true)
+
+	# Atualiza posição do Gizmo de Raio no mundo
+	if _radius_gizmo:
+		_radius_gizmo.set_center_position(_local_player.position)
+
+	# Atualiza Inspetor de Atores Próximos se o painel F4 estiver ativo
+	if _debug_hud and _debug_hud.is_actor_inspector_open():
+		_inspector_timer += delta
+		if _inspector_timer >= 0.15:
+			_inspector_timer = 0.0
+			var nearby = _world_chunk_manager.get_static_actors_in_radius(
+				_local_player.position,
+				_inspector_radius,
+			)
+			_debug_hud.update_nearby_actors(nearby, _inspector_radius)
 
 	# Atualiza telemetria do HUD
 	if _debug_hud:
@@ -291,13 +328,40 @@ func _input(event: InputEvent) -> void:
 				_world_chunk_manager.set_wireframe_enabled(_wireframe_active)
 			print("[DEBUG] Wireframe (60 FPS): ", "ATIVADO" if _wireframe_active else "DESATIVADO")
 
-		# Tecla F10: Salva o estado atual de corpos d'água na memória para water_volumes_fix.json
-		elif event.keycode == KEY_F10 or event.physical_keycode == KEY_F10:
-			_save_current_chunk_water_fix()
+		# Tecla F4: Alterna Inspetor de Atores Próximos e Gizmo de Raio
+		elif event.keycode == KEY_F4 or event.physical_keycode == KEY_F4:
+			if _debug_hud:
+				_debug_hud.toggle_actor_inspector()
+				var is_open = _debug_hud.is_actor_inspector_open()
+				if _radius_gizmo:
+					_radius_gizmo.set_gizmo_visible(is_open)
+				if is_open:
+					var nearby = _world_chunk_manager.get_static_actors_in_radius(
+						_local_player.position,
+						_inspector_radius,
+					)
+					_debug_hud.update_nearby_actors(nearby, _inspector_radius)
+				else:
+					_debug_hud.clear_selection()
+					if _mesh_selection_highlighter:
+						_mesh_selection_highlighter.clear_highlight()
+				print("[DEBUG] Inspetor de Atores (F4): ", "ATIVADO" if is_open else "DESATIVADO")
+
+		# Tecla ESC: Cancela a seleção de ator e limpa o destaque 3D
+		elif event.keycode == KEY_ESCAPE or event.physical_keycode == KEY_ESCAPE:
+			if _debug_hud:
+				_debug_hud.clear_selection()
+			if _mesh_selection_highlighter:
+				_mesh_selection_highlighter.clear_highlight()
+			print("[DEBUG] Seleção de Ator Cancelada (ESC).")
 
 		# Tecla F5: Alterna Visualização de Colisores de Física (Debug Collision)
 		elif event.keycode == KEY_F5 or event.physical_keycode == KEY_F5:
 			_toggle_debug_collisions()
+
+		# Tecla F10: Salva o estado atual de corpos d'água na memória para water_volumes_fix.json
+		elif event.keycode == KEY_F10 or event.physical_keycode == KEY_F10:
+			_save_current_chunk_water_fix()
 
 		# Tecla F12: Alterna Sombras da Luz Solar
 		elif event.keycode == KEY_F12 or event.physical_keycode == KEY_F12:
@@ -307,6 +371,88 @@ func _input(event: InputEvent) -> void:
 					"[DEBUG] Sombras Direcionais: ",
 					"ATIVADAS" if _directional_light.shadow_enabled else "DESATIVADAS",
 				)
+
+	# Ajuste Dinâmico do Raio de Inspeção com Ctrl + Scroll
+	elif event is InputEventMouseButton and event.pressed and event.ctrl_pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_inspector_radius = clampf(_inspector_radius + 5.0, 5.0, 100.0)
+			if _radius_gizmo:
+				_radius_gizmo.set_radius(_inspector_radius)
+			if _debug_hud and _debug_hud.is_actor_inspector_open():
+				var nearby = _world_chunk_manager.get_static_actors_in_radius(
+					_local_player.position,
+					_inspector_radius,
+				)
+				_debug_hud.update_nearby_actors(nearby, _inspector_radius)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_inspector_radius = clampf(_inspector_radius - 5.0, 5.0, 100.0)
+			if _radius_gizmo:
+				_radius_gizmo.set_radius(_inspector_radius)
+			if _debug_hud and _debug_hud.is_actor_inspector_open():
+				var nearby = _world_chunk_manager.get_static_actors_in_radius(
+					_local_player.position,
+					_inspector_radius,
+				)
+				_debug_hud.update_nearby_actors(nearby, _inspector_radius)
+
+
+func _on_actor_selected_in_hud(actor_dict: Dictionary) -> void:
+	if not _mesh_selection_highlighter:
+		return
+
+	var mesh = actor_dict.get("mesh", null)
+	var xform = actor_dict.get("transform", Transform3D.IDENTITY)
+	var aabb = actor_dict.get("aabb", AABB())
+
+	if mesh:
+		_mesh_selection_highlighter.highlight_mesh_and_aabb(mesh, xform, aabb)
+	else:
+		_mesh_selection_highlighter.highlight_aabb(aabb)
+
+
+func _on_actor_transform_applied(
+	actor_name: String,
+	pos: Vector3,
+	rot_deg: Vector3,
+	sc: Vector3
+) -> void:
+	if not _world_chunk_manager:
+		return
+	var res = _world_chunk_manager.update_static_actor_transform(actor_name, pos, rot_deg, sc)
+	if res.get("found", false) and _mesh_selection_highlighter:
+		var mesh = res.get("mesh", null)
+		var xform = res.get("transform", Transform3D.IDENTITY)
+		var aabb = res.get("aabb", AABB())
+		if mesh:
+			_mesh_selection_highlighter.highlight_mesh_and_aabb(mesh, xform, aabb)
+		else:
+			_mesh_selection_highlighter.highlight_aabb(aabb)
+		print("[DEBUG] Ator '%s' transform atualizado em tempo real no mundo 3D." % actor_name)
+
+
+func _on_actor_fix_saved(actor_name: String, pos: Vector3, rot_deg: Vector3, sc: Vector3) -> void:
+	if not _world_chunk_manager:
+		return
+	_on_actor_transform_applied(actor_name, pos, rot_deg, sc)
+	var success = _world_chunk_manager.save_actor_fix(actor_name, pos, rot_deg, sc)
+	if success:
+		print("[DEBUG] chunk_static_actors_fix.json salvo com sucesso para ator '%s'." % actor_name)
+	else:
+		print("[DEBUG] Falha ao salvar chunk_static_actors_fix.json para ator '%s'." % actor_name)
+
+
+func _on_actor_reset_requested(actor_name: String) -> void:
+	if not _world_chunk_manager:
+		return
+	var raw = _world_chunk_manager.get_raw_actor_data(actor_name)
+	if not raw.is_empty():
+		var pos = raw.get("position", Vector3.ZERO)
+		var rot = raw.get("rotation_degrees", Vector3.ZERO)
+		var sc = raw.get("scale", Vector3.ONE)
+		_on_actor_transform_applied(actor_name, pos, rot, sc)
+		if _debug_hud:
+			_debug_hud.set_editor_values(pos, rot, sc, "Valores restaurados para o original!")
+		print("[DEBUG] Ator '%s' resetado para valores originais." % actor_name)
 
 
 func _toggle_debug_collisions() -> void:

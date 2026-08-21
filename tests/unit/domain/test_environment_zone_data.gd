@@ -31,13 +31,12 @@ func test_from_recipe_dictionary() -> void:
 			"color_rgb": [0.65, 0.75, 0.85],
 			"distance_range_meters": [80.0, 6400.0]
 		},
-		"water_volumes": [
-			{
-				"name": "WaterVolume0",
+		"water_volumes": {
+			"WaterVolume0": {
 				"water_z_meters": 0.0,
 				"is_water_zone": true
 			}
-		]
+		}
 	}
 
 	# Act
@@ -50,18 +49,18 @@ func test_from_recipe_dictionary() -> void:
 	assert_almost_eq(data.fog_start_meters, 80.0, 0.001)
 	assert_almost_eq(data.fog_end_meters, 6400.0, 0.001)
 	assert_eq(data.water_volumes.size(), 1)
+	assert_true(data.water_volumes.has("WaterVolume0"))
 
 
 func test_water_submersion_and_depth() -> void:
 	# Arrange
 	var data = EnvironmentZoneDataClass.new("Ocean Zone")
-	data.water_volumes = [
-		{
-			"name": "SeaLevel",
+	data.water_volumes = {
+		"SeaLevel": {
 			"water_z_meters": 0.0,
 			"is_water_zone": true
 		}
-	]
+	}
 
 	# Act & Assert
 	# Posição acima do nível do mar (Y = 10.0m)

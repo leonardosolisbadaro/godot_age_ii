@@ -76,8 +76,8 @@ var fog_color: Color = Color(0.7, 0.8, 0.9, 1.0)
 var fog_start_meters: float = DEFAULT_FOG_START_METERS
 var fog_end_meters: float = DEFAULT_FOG_END_METERS
 
-# Volumes de Água [{ "name": String, "water_z_meters": float, "is_water_zone": bool }]
-var water_volumes: Array = []
+# Volumes de Água { "WaterVolume0": { "water_z_meters": float, "is_water_zone": bool } }
+var water_volumes: Dictionary = { }
 
 
 func _init(p_zone_name: String = "") -> void:
@@ -126,12 +126,19 @@ func from_recipe_dictionary(dict: Dictionary) -> void:
 			fog_start_meters = float(dist_arr[0])
 			fog_end_meters = float(dist_arr[1])
 
-	water_volumes = dict.get("water_volumes", water_volumes)
+	var raw_wv = dict.get("water_volumes", { })
+	if raw_wv is Dictionary:
+		water_volumes = raw_wv
+	else:
+		water_volumes = { }
 
 
 func is_submerged_at(world_pos: Vector3) -> bool:
-	for wv in water_volumes:
-		var water_level = float(wv.get("water_z_meters", 0.0))
+	for v_name in water_volumes.keys():
+		var wv = water_volumes[v_name]
+		if not (wv is Dictionary):
+			continue
+		var water_level = float(wv.get("water_z_meters", wv.get("surface_y_m", 0.0)))
 		if world_pos.y < water_level:
 			return true
 	return false
@@ -139,8 +146,11 @@ func is_submerged_at(world_pos: Vector3) -> bool:
 
 func get_water_depth_at(world_pos: Vector3) -> float:
 	var max_depth: float = 0.0
-	for wv in water_volumes:
-		var water_level = float(wv.get("water_z_meters", 0.0))
+	for v_name in water_volumes.keys():
+		var wv = water_volumes[v_name]
+		if not (wv is Dictionary):
+			continue
+		var water_level = float(wv.get("water_z_meters", wv.get("surface_y_m", 0.0)))
 		if world_pos.y < water_level:
 			var depth = water_level - world_pos.y
 			if depth > max_depth:

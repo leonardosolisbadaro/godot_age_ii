@@ -17,9 +17,9 @@ const EnvironmentZoneDataClass = preload("res://src/domain/environment_zone_data
 func test_evaluate_water_presence() -> void:
 	# Arrange
 	var env_data = EnvironmentZoneDataClass.new("Talking Island Waters")
-	env_data.water_volumes = [
-		{ "name": "SeaLevel", "water_z_meters": 0.0, "is_water_zone": true }
-	]
+	env_data.water_volumes = {
+		"SeaLevel": { "water_z_meters": 0.0, "is_water_zone": true }
+	}
 	var use_case = EvaluateChunkWaterPresenceUseCaseClass.new()
 
 	# Act

@@ -73,49 +73,51 @@ func test_apply_water_volumes_fix_in_memory() -> void:
 	# Arrange
 	var adapter = ChunkResourceAdapterClass.new("res://assets/maps")
 	var raw_data = {
-		"water_volumes": [
+		"water_volumes":
+		{
+			"WaterVolume0":
 			{
-				"name": "WaterVolume0",
 				"surface_y_m": -320.0,
 				"water_plane_height_m": -320.0,
 				"size_m": [2621.44, 2621.44],
 			},
+			"RiverVolume1":
 			{
-				"name": "RiverVolume1",
 				"surface_y_m": -150.0,
 				"water_plane_height_m": -150.0,
 				"size_m": [500.0, 1000.0],
 			}
-		]
+		}
 	}
 	var fix_data = {
-		"water_volumes": [
+		"water_volumes":
+		{
+			"WaterVolume0":
 			{
-				"name": "WaterVolume0",
 				"surface_y_m": -315.0,
 				"water_plane_height_m": -315.0,
 				"ocean_extension": 2000.0,
 			},
+			"CustomPondVolume":
 			{
-				"name": "CustomPondVolume",
 				"surface_y_m": -50.0,
 				"water_plane_height_m": -50.0,
 				"size_m": [200.0, 200.0],
 			}
-		]
+		}
 	}
 
 	# Act
 	var merged = adapter._apply_water_volumes_fix(raw_data, fix_data)
-	var volumes: Array = merged.get("water_volumes", [])
+	var volumes: Dictionary = merged.get("water_volumes", { })
 
 	# Assert
 	assert_eq(volumes.size(), 3, "Deve conter 3 volumes (2 originais com 1 override + 1 novo)")
-	var wv0 = volumes[0]
+	var wv0 = volumes.get("WaterVolume0", { })
 	assert_eq(wv0.get("surface_y_m"), -315.0, "Cota de WaterVolume0 deve ser atualizada para -315.0")
 	assert_eq(wv0.get("ocean_extension"), 2000.0, "ocean_extension deve ser adicionado ao WaterVolume0")
-	var custom_v = volumes[2]
-	assert_eq(custom_v.get("name"), "CustomPondVolume", "Novo volume CustomPondVolume deve ser inserido")
+	var custom_v = volumes.get("CustomPondVolume", { })
+	assert_false(custom_v.is_empty(), "Novo volume CustomPondVolume deve existir no dicionário")
 	assert_eq(custom_v.get("surface_y_m"), -50.0)
 
 
@@ -125,14 +127,15 @@ func test_save_and_load_water_volumes_fix_io() -> void:
 	var adapter = ChunkResourceAdapterClass.new(test_maps_path)
 	var chunk_name = "test_chunk_water"
 	var test_fix_data = {
-		"water_volumes": [
+		"water_volumes":
+		{
+			"SavedWaterVolume":
 			{
-				"name": "SavedWaterVolume",
 				"surface_y_m": -280.0,
 				"water_plane_height_m": -280.0,
-				"size_m": [1500.0, 1500.0]
+				"size_m": [1500.0, 1500.0],
 			}
-		]
+		}
 	}
 
 	# Act: Salva fix
@@ -141,13 +144,13 @@ func test_save_and_load_water_volumes_fix_io() -> void:
 
 	# Act: Carrega dict mesclado (sem raw existente, deve carregar o fix)
 	var loaded_dict = adapter.load_water_volumes_dict(chunk_name)
-	var vols = loaded_dict.get("water_volumes", [])
+	var vols = loaded_dict.get("water_volumes", { })
 
 	# Assert
 	assert_false(loaded_dict.is_empty(), "Dicionário carregado não deve ser vazio")
 	assert_eq(vols.size(), 1, "Deve conter o volume salvo no fix")
-	assert_eq(vols[0].get("name"), "SavedWaterVolume")
-	assert_eq(vols[0].get("surface_y_m"), -280.0)
+	assert_true(vols.has("SavedWaterVolume"))
+	assert_eq(vols["SavedWaterVolume"].get("surface_y_m"), -280.0)
 
 	# Cleanup
 	var fix_file = "%s/%s/water_volumes_fix.json" % [test_maps_path, chunk_name]
@@ -167,4 +170,140 @@ func test_load_collision_rules_dict() -> void:
 	assert_false(rules.is_empty(), "static_mesh_collision_rules.json deve ser carregado com sucesso")
 	assert_true(rules.has("categories"), "Deve conter a chave 'categories'")
 	assert_true(rules.has("custom_overrides"), "Deve conter a chave 'custom_overrides'")
+
+
+func test_save_and_load_static_actors_fix_io() -> void:
+	# Arrange
+	var test_maps_path = "res://assets/maps"
+	var adapter = ChunkResourceAdapterClass.new(test_maps_path)
+	var chunk_name = "test_chunk_actors_fix_tmp"
+	var fix_data = {
+		"actors":
+		{
+			"StaticMeshActorTest":
+			{
+				"actor_name": "StaticMeshActorTest",
+				"transform":
+				{
+					"location_meters": [10.0, -280.0, 50.0],
+					"rotation_degrees": [0.0, 90.0, 0.0],
+					"scale": [1.0, 1.0, 1.0],
+				}
+			}
+		}
+	}
+
+	# Act: Salva no disco
+	var save_ok = adapter.save_static_actors_fix(chunk_name, fix_data)
+	assert_true(save_ok, "save_static_actors_fix deve retornar true")
+
+	# Act: Carrega do disco
+	var loaded = adapter.load_static_actors_fix_dict(chunk_name)
+	assert_false(loaded.is_empty(), "load_static_actors_fix_dict deve carregar o dicionário")
+	assert_true(loaded.has("actors"), "Deve conter a chave 'actors'")
+
+	# Cleanup
+	var fix_file = "%s/%s/chunk_static_actors_fix.json" % [test_maps_path, chunk_name]
+	var glob_f = ProjectSettings.globalize_path(fix_file)
+	if FileAccess.file_exists(glob_f):
+		DirAccess.remove_absolute(glob_f)
+	var dir_f = glob_f.get_base_dir()
+	if DirAccess.dir_exists_absolute(dir_f):
+		DirAccess.remove_absolute(dir_f)
+
+
+func test_load_static_actors_dict_format() -> void:
+	# Arrange
+	var test_maps_path = "res://assets/maps"
+	var adapter = ChunkResourceAdapterClass.new(test_maps_path)
+	var chunk_name = "test_chunk_dict_actors_tmp"
+	var json_file = "%s/%s/chunk_static_actors.json" % [test_maps_path, chunk_name]
+	var glob_f = ProjectSettings.globalize_path(json_file)
+	var dir_f = glob_f.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir_f):
+		DirAccess.make_dir_recursive_absolute(dir_f)
+
+	var mock_meta = {
+		"chunk_name": chunk_name,
+		"total_actors": 2,
+		"actors":
+		{
+			"ActorAlpha":
+			{
+				"transform":
+				{
+					"location_meters": [10.0, -200.0, 30.0],
+				}
+			},
+			"ActorBeta":
+			{
+				"transform":
+				{
+					"location_meters": [40.0, -200.0, 60.0],
+				}
+			}
+		}
+	}
+	var f = FileAccess.open(glob_f, FileAccess.WRITE)
+	f.store_string(JSON.stringify(mock_meta, "\t"))
+	f.close()
+
+	# Act
+	var loaded_actors = adapter.load_static_actors_array(chunk_name)
+
+	# Assert
+	assert_eq(loaded_actors.size(), 2, "Deve carregar os 2 atores do dicionário")
+	var names: Array = []
+	for a in loaded_actors:
+		names.append(a.get("actor_name", ""))
+	assert_true(names.has("ActorAlpha"), "Deve conter ActorAlpha")
+	assert_true(names.has("ActorBeta"), "Deve conter ActorBeta")
+
+	# Cleanup
+	if FileAccess.file_exists(glob_f):
+		DirAccess.remove_absolute(glob_f)
+	if DirAccess.dir_exists_absolute(dir_f):
+		DirAccess.remove_absolute(dir_f)
+
+
+func test_apply_water_volumes_fix_dict_format() -> void:
+	# Arrange
+	var adapter = ChunkResourceAdapterClass.new("res://assets/maps")
+	var raw_data = {
+		"water_volumes":
+		{
+			"WaterVolume0":
+			{
+				"surface_y_m": -320.0,
+				"size_m": [2621.44, 2621.44],
+			}
+		}
+	}
+	var fix_data = {
+		"water_volumes":
+		{
+			"WaterVolume0":
+			{
+				"surface_y_m": -310.0,
+				"ocean_extension": 1500.0,
+			},
+			"NewPond":
+			{
+				"surface_y_m": -50.0,
+				"size_m": [200.0, 200.0],
+			}
+		}
+	}
+
+	# Act
+	var merged = adapter._apply_water_volumes_fix(raw_data, fix_data)
+	var volumes: Dictionary = merged.get("water_volumes", { })
+
+	# Assert
+	assert_eq(volumes.size(), 2, "Deve conter 2 volumes")
+	assert_true(volumes.has("WaterVolume0"))
+	assert_eq(volumes["WaterVolume0"].get("surface_y_m"), -310.0, "Cota deve ser sobrescrita pelo fix")
+	assert_eq(volumes["WaterVolume0"].get("ocean_extension"), 1500.0)
+	assert_true(volumes.has("NewPond"))
+	assert_eq(volumes["NewPond"].get("surface_y_m"), -50.0)
 

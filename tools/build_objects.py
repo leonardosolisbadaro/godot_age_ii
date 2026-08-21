@@ -16,6 +16,7 @@ Inclui validação rigorosa de pré-requisitos antes da execução.
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import struct
@@ -338,18 +339,27 @@ def process_chunk_objects(
     chunk_root = maps_dir / clean_name
     chunk_root.mkdir(parents=True, exist_ok=True)
 
+    # Converte para dicionário indexado pelo nome do ator (sem redundância)
+    actors_dict_indexed = {}
+    for a in actors:
+        a_name = a.get("actor_name")
+        if not a_name:
+            continue
+        a_data = {k: v for k, v in a.items() if k != "actor_name"}
+        actors_dict_indexed[a_name] = a_data
+
     actors_meta = {
         "chunk_name": clean_name,
-        "total_actors": len(actors),
+        "total_actors": len(actors_dict_indexed),
         "unique_meshes_count": len(needed_meshes),
-        "actors": actors,
+        "actors": actors_dict_indexed,
     }
 
     root_json = chunk_root / "chunk_static_actors.json"
     with open(root_json, "w", encoding="utf-8") as f:
         json.dump(actors_meta, f, indent=4)
 
-    print(f"    -> Salvo metadados unificados em: {root_json.name}")
+    print(f"    -> Salvo metadados unificados (raw) em: {root_json.name}")
     return actors_meta
 
 

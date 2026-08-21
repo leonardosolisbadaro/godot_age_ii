@@ -103,18 +103,27 @@ def process_map_environment(
         json.dump(client_recipe, f, indent=4)
     print(f"    -> Salvo receita ambiental do cliente em: {client_env_file.name}")
 
-    # 2. Salva water_volumes.json unificado na raiz do mapa e no server
+    # 2. Salva water_volumes.json unificado na raiz do mapa e no server (indexado por nome)
     root_water_file = chunk_root / "water_volumes.json"
     server_water_file = chunk_server_dir / "water_volumes.json"
+
+    water_volumes_dict = {}
+    for wv in env_data["water_volumes"]:
+        w_name = wv.get("name", "")
+        if not w_name:
+            continue
+        w_data = {k: v for k, v in wv.items() if k != "name"}
+        water_volumes_dict[w_name] = w_data
+
     water_data = {
         "chunk_name": clean_name,
-        "water_volumes": env_data["water_volumes"],
+        "water_volumes": water_volumes_dict,
     }
     with open(root_water_file, "w", encoding="utf-8") as f:
         json.dump(water_data, f, indent=4)
     with open(server_water_file, "w", encoding="utf-8") as f:
         json.dump(water_data, f, indent=4)
-    print(f"    -> Salvo metadados de corpos d'água em: {root_water_file.name}")
+    print(f"    -> Salvo metadados de corpos d'água (indexado) em: {root_water_file.name}")
 
     # 3. Resolve materiais referenciados pelos atores do mapa
     resolver = MaterialTreeResolver(env, textures_out_dir=textures_dir, config=config)
@@ -127,7 +136,12 @@ def process_map_environment(
         with open(actors_json, "r", encoding="utf-8") as f:
             actors_meta = json.load(f)
 
-        for a in actors_meta.get("actors", []):
+        acts = actors_meta.get("actors", [])
+        actor_list = list(acts.values()) if isinstance(acts, dict) else acts
+
+        for a in actor_list:
+            if not isinstance(a, dict):
+                continue
             m_ref = a.get("mesh_ref")
             if isinstance(m_ref, dict):
                 pkg_name = m_ref.get("package")

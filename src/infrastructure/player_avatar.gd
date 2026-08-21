@@ -53,7 +53,7 @@ const CAPSULE_HEIGHT: float = 1.8
 ## @const MAX_STEP_HEIGHT (float)
 ## O que: Altura máxima de degrau que o avatar transpõe automaticamente em metros (0.40m = 40cm).
 ## Porque: Permite subir calçadas, escadas e soleiras de portas sem travar em quinas de 90°.
-const MAX_STEP_HEIGHT: float = 0.40
+const MAX_STEP_HEIGHT: float = 0.60
 
 ## @const PIVOT_HEIGHT (float)
 ## O que: Altura do pivô da câmera orbital em relação aos pés do avatar (1.4m).
@@ -196,8 +196,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			CAMERA_PITCH_MAX_DEG,
 		)
 
-	# Zoom da Câmera com a Roda do Mouse
+	# Zoom da Câmera com a Roda do Mouse (ignora se Ctrl estiver pressionado)
 	if event is InputEventMouseButton and event.pressed:
+		if event.ctrl_pressed:
+			return
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_current_zoom = maxf(_current_zoom - CAMERA_ZOOM_STEP, CAMERA_MIN_ZOOM)
 			_spring_arm.spring_length = _current_zoom

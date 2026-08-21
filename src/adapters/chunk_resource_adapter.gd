@@ -123,20 +123,19 @@ func load_environment_recipe_dict(chunk_name: String) -> Dictionary:
 
 
 func load_water_volumes_dict(chunk_name: String) -> Dictionary:
-	var root_path = "%s/%s/water_volumes.json" % [base_maps_path, chunk_name]
-	var server_path = "%s/%s/server/water_volumes.json" % [base_maps_path, chunk_name]
-	var target = root_path if _file_exists(root_path) else server_path
-	var data = _read_json_as_dict(target)
+	var path_root = "%s/%s/water_volumes.json" % [base_maps_path, chunk_name]
+	var path_server = "%s/%s/server/water_volumes.json" % [base_maps_path, chunk_name]
+	var path = path_root if _file_exists(path_root) else path_server
 
-	# Aplica overrides de water_volumes_fix.json se existir
+	var data = _read_json_as_dict(path)
+	if not data.has("water_volumes") or not (data["water_volumes"] is Dictionary):
+		data["water_volumes"] = { }
+
 	var fix_root = "%s/%s/water_volumes_fix.json" % [base_maps_path, chunk_name]
-	var fix_server = "%s/%s/server/water_volumes_fix.json" % [base_maps_path, chunk_name]
 	var fix_client = "%s/%s/client/water_volumes_fix.json" % [base_maps_path, chunk_name]
 	var fix_path = ""
 	if _file_exists(fix_root):
 		fix_path = fix_root
-	elif _file_exists(fix_server):
-		fix_path = fix_server
 	elif _file_exists(fix_client):
 		fix_path = fix_client
 
@@ -148,45 +147,25 @@ func load_water_volumes_dict(chunk_name: String) -> Dictionary:
 
 
 func _apply_water_volumes_fix(water_data: Dictionary, fix_data: Dictionary) -> Dictionary:
-	var volumes = water_data.get("water_volumes", [])
-	if not (volumes is Array):
-		volumes = []
+	var volumes_dict: Dictionary = water_data.get("water_volumes", { })
+	if not (volumes_dict is Dictionary):
+		volumes_dict = { }
 
-	var fix_volumes = fix_data.get("water_volumes", [])
-	if not (fix_volumes is Array):
+	var fix_volumes_dict: Dictionary = fix_data.get("water_volumes", { })
+	if not (fix_volumes_dict is Dictionary):
 		return water_data
 
-	var fix_map: Dictionary = { }
-	var new_volumes: Array = []
+	for v_name in fix_volumes_dict.keys():
+		var override = fix_volumes_dict[v_name]
+		if not (override is Dictionary):
+			continue
+		if not volumes_dict.has(v_name):
+			volumes_dict[v_name] = override.duplicate(true)
+		else:
+			for k in override.keys():
+				volumes_dict[v_name][k] = override[k]
 
-	for fv in fix_volumes:
-		if fv is Dictionary:
-			var f_name = fv.get("name", "")
-			if not f_name.is_empty():
-				fix_map[f_name] = fv
-			else:
-				new_volumes.append(fv)
-
-	var matched_names: Dictionary = { }
-
-	for v in volumes:
-		if v is Dictionary:
-			var v_name = v.get("name", "")
-			if not v_name.is_empty() and fix_map.has(v_name):
-				var override = fix_map[v_name]
-				matched_names[v_name] = true
-				for k in override.keys():
-					v[k] = override[k]
-
-	# Adiciona volumes novos definidos no fix
-	for f_name in fix_map.keys():
-		if not matched_names.has(f_name):
-			volumes.append(fix_map[f_name])
-
-	for nv in new_volumes:
-		volumes.append(nv)
-
-	water_data["water_volumes"] = volumes
+	water_data["water_volumes"] = volumes_dict
 	return water_data
 
 
@@ -216,37 +195,89 @@ func load_static_actors_array(chunk_name: String, is_server: bool = false) -> Ar
 	var sub_path = "%s/%s/%s/chunk_static_actors.json" % [base_maps_path, chunk_name, subfolder]
 
 	var main_path = root_path if _file_exists(root_path) else sub_path
-	var data = _read_json_raw(main_path)
-	var actors: Array = []
-	if data is Array:
-		actors = data
-	elif data is Dictionary:
-		actors = data.get("actors", [])
+	var data = _read_json_as_dict(main_path)
+	var raw_actors: Dictionary = data.get("actors", { })
+	if not (raw_actors is Dictionary):
+		raw_actors = { }
 
-	# Aplica overrides de chunk_static_actors_fix.json se existir
 	var fix_root = "%s/%s/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
 	var fix_client = "%s/%s/client/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
 	var fix_path = fix_root if _file_exists(fix_root) else fix_client
+	var fix_actors: Dictionary = { }
 	if _file_exists(fix_path):
 		var fix_data = _read_json_as_dict(fix_path)
-		var fix_actors = fix_data.get("actors", [])
-		var fix_map = { }
-		for fa in fix_actors:
-			if fa is Dictionary and fa.has("actor_name"):
-				fix_map[fa["actor_name"]] = fa
+		var f_acts = fix_data.get("actors", { })
+		if f_acts is Dictionary:
+			fix_actors = f_acts
 
-		for a in actors:
-			if a is Dictionary and a.has("actor_name"):
-				var a_name = a["actor_name"]
-				if fix_map.has(a_name):
-					var override = fix_map[a_name]
-					if override.has("transform") and a.has("transform"):
-						for k in override["transform"].keys():
-							a["transform"][k] = override["transform"][k]
-					if override.has("mesh_ref"):
-						a["mesh_ref"] = override["mesh_ref"]
+	var actors: Array = []
+	for a_name in raw_actors.keys():
+		var a_dict = raw_actors[a_name]
+		if not (a_dict is Dictionary):
+			continue
+		var a = a_dict.duplicate(true)
+		a["actor_name"] = str(a_name)
+
+		if fix_actors.has(a_name):
+			var override = fix_actors[a_name]
+			if override is Dictionary:
+				if not a.has("transform"):
+					a["transform"] = { }
+				if override.has("transform") and override["transform"] is Dictionary:
+					for k in override["transform"].keys():
+						a["transform"][k] = override["transform"][k]
+						if k == "location_meters":
+							a["transform"]["position_meters"] = override["transform"][k]
+						elif k == "position_meters":
+							a["transform"]["location_meters"] = override["transform"][k]
+						elif k == "rotation_degrees":
+							var deg_arr = override["transform"][k]
+							if deg_arr is Array and deg_arr.size() >= 3:
+								a["transform"]["rotation_euler_rad"] = [
+									deg_to_rad(float(deg_arr[0])),
+									deg_to_rad(float(deg_arr[1])),
+									deg_to_rad(float(deg_arr[2])),
+								]
+				elif override.has("location_meters"):
+					var loc = override.get("location_meters", [])
+					if loc is Array:
+						a["transform"]["location_meters"] = loc
+						a["transform"]["position_meters"] = loc
+				if override.has("mesh_ref"):
+					a["mesh_ref"] = override["mesh_ref"]
+
+		actors.append(a)
 
 	return actors
+
+
+func load_static_actors_fix_dict(chunk_name: String) -> Dictionary:
+	var fix_root = "%s/%s/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
+	var fix_client = "%s/%s/client/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
+	var fix_path = fix_root if _file_exists(fix_root) else fix_client
+	if not _file_exists(fix_path):
+		return { }
+	return _read_json_as_dict(fix_path)
+
+
+func save_static_actors_fix(chunk_name: String, fix_data: Dictionary) -> bool:
+	var fix_path = "%s/%s/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
+	var target = _resolve_write_path(fix_path)
+	if target.is_empty():
+		return false
+
+	var dir_path = target.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir_path):
+		DirAccess.make_dir_recursive_absolute(dir_path)
+
+	var file = FileAccess.open(target, FileAccess.WRITE)
+	if not file:
+		return false
+
+	var json_str = JSON.stringify(fix_data, "\t")
+	file.store_string(json_str)
+	file.close()
+	return true
 
 
 func load_material_recipes_dict(chunk_name: String) -> Dictionary:

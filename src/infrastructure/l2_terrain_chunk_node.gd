@@ -42,6 +42,7 @@ var _visual_instance: Node3D
 var _terrain_material: ShaderMaterial
 var _static_body: StaticBody3D
 var _collision_shape: CollisionShape3D
+var _is_built: bool = false
 
 
 func _init(p_chunk_name: String = "", p_base_path: String = "res://assets/maps") -> void:
@@ -55,6 +56,10 @@ func _ready() -> void:
 
 
 func build_chunk_node() -> void:
+	if _is_built:
+		return
+	_is_built = true
+
 	# 1. Carrega cena visual .glb do chunk via TerrainChunkAdapter
 	var adapter = TerrainChunkAdapterClass.new()
 	_visual_instance = adapter.load_visual_mesh_node(chunk_name, base_maps_path)
@@ -216,11 +221,12 @@ func _setup_local_water_volumes() -> void:
 	_water_volume_nodes.clear()
 	var resource_adapter = ChunkResourceAdapterClass.new(base_maps_path)
 	_water_volumes_data = resource_adapter.load_water_volumes_dict(chunk_name)
-	var volumes = _water_volumes_data.get("water_volumes", [])
-	if not (volumes is Array):
+	var volumes = _water_volumes_data.get("water_volumes", { })
+	if not (volumes is Dictionary):
 		return
 
-	for v in volumes:
+	for v_name in volumes.keys():
+		var v = volumes[v_name]
 		if not (v is Dictionary):
 			continue
 		if v.get("enabled", true) == false or v.get("hidden", false) == true:
