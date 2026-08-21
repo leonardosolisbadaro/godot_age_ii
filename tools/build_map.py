@@ -178,6 +178,8 @@ def main():
             "  python tools/build_map.py 16_24\n"
             "  python tools/build_map.py 16_24 16_25\n"
             "  python tools/build_map.py 16_24 16_25 17_24 17_25 --force\n"
+            "  python tools/build_map.py --all\n"
+            "  python tools/build_map.py all\n"
             "  python tools/build_map.py --l2-root \"./Lineage II\"\n"
         ),
     )
@@ -185,7 +187,13 @@ def main():
         "maps",
         nargs="*",
         default=["16_24", "16_25", "17_24", "17_25"],
-        help="Nomes dos chunks de mapa a compilar (padrão: 16_24 16_25 17_24 17_25)",
+        help="Nomes dos chunks de mapa a compilar (use 'all' ou --all para compilar todo o mundo do jogo)",
+    )
+    parser.add_argument(
+        "--all",
+        "-a",
+        action="store_true",
+        help="Processa e compila todos os mapas .unr existentes na pasta do Lineage II",
     )
     parser.add_argument(
         "--l2-root",
@@ -217,17 +225,23 @@ def main():
     env = L2Environment(config=config, l2_root=config.l2_root_dir)
     l2_root = env.l2_root
 
+    # Se solicitado --all ou argumento "all", carrega todos os mapas disponíveis
+    if args.all or (len(args.maps) == 1 and args.maps[0].lower() == "all"):
+        target_map_names = sorted(list(env.available_unr.keys()))
+    else:
+        target_map_names = args.maps
+
     print("=" * 80)
     print(" [*] GODOTAGE II — PIPELINE UNIFICADO DE COMPILAÇÃO DE MAPAS")
     print("=" * 80)
     print(f" [*] Raiz do Lineage II : {l2_root}")
     print(f" [*] Executável UModel  : {find_umodel_executable(config)}")
-    print(f" [*] Chunks Solicitados : {', '.join(args.maps)}")
+    print(f" [*] Chunks Solicitados : {len(target_map_names)} mapa(s)")
     print(f" [*] Forçar Recompilação: {args.force}")
 
     # 2. Compilação de Relevo em Lote (2-Pass Seamless Alignment)
     valid_unrs = []
-    for m in args.maps:
+    for m in target_map_names:
         unr_p = env.available_unr.get(m.lower())
         if unr_p and unr_p.is_file():
             valid_unrs.append(unr_p)
@@ -249,7 +263,7 @@ def main():
         )
 
     # 3. Atores, Texturas e Ambiente de Cada Chunk
-    for m in args.maps:
+    for m in target_map_names:
         process_chunk_actors_and_env(
             m, env, maps_dir, models_dir, textures_dir, umodel_root, l2_root, force=args.force, config=config
         )

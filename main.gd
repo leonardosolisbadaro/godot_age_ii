@@ -7,7 +7,7 @@
 ## (streaming 3D, Shaders de terreno/oceano, static meshes, atmosfera, avatar e DebugHUD).
 ##
 ## @created 2026-08-18
-## @updated 2026-08-20
+## @updated 2026-08-21
 ##
 ## @author Leonardo S. Badaró
 extends Node3D
@@ -20,6 +20,8 @@ const DebugHUDClass = preload("res://src/infrastructure/debug_hud.gd")
 const EnvironmentZoneAdapterClass = preload("res://src/adapters/environment_zone_adapter.gd")
 const EnvironmentZoneDataClass = preload("res://src/domain/environment_zone_data.gd")
 const ChunkResourceAdapterClass = preload("res://src/adapters/chunk_resource_adapter.gd")
+const HeightfieldSamplerClass = preload("res://src/domain/heightfield_sampler.gd")
+const TerrainChunkDataClass = preload("res://src/domain/terrain_chunk_data.gd")
 
 # ==============================================================================
 # CONSTANTES SEMÂNTICAS DE REDE E MUNDO
@@ -50,10 +52,17 @@ const MAPS_BASE_PATH: String = "res://assets/maps"
 ## Porque: Região central de Talking Island Village.
 const FALLBACK_ENV_CHUNK: String = "16_24"
 
+## @const SPAWN_ON_MAP (String)
+## O que: Identificador do chunk para cálculo dinâmico do ponto de spawn ("16_24").
+## Porque: Caso preenchido e não nulo, o spawn será posicionado no centro do chunk e na cota do solo.
+const SPAWN_ON_MAP: String = "16_24"
+# const SPAWN_ON_MAP: String = ""
+
 ## @const SPAWN_POS (Vector3)
-## O que: Ponto inicial de spawn do avatar em Talking Island (X=-6993.0m, Y=-286.0m, Z=19207.0m).
-## Porque: Posicionado na entrada da colina da Praça de Talking Island com solo a -300.5m.
-const SPAWN_POS: Vector3 = Vector3(-6993.0, -286.0, 19207.0)
+## O que: Ponto inicial de spawn de fallback caso SPAWN_ON_MAP seja vazio ou nulo.
+## Porque: Ponto de referência em Talking Island (X=-3779.0m, Y=-286.0m, Z=16976.0m).
+const SPAWN_POS: Vector3 = Vector3(-3779.0, -286.0, 16976.0)
+# const SPAWN_POS: Vector3 = Vector3(-6040.0, -286.0, 20962.0)
 
 ## @const DEFAULT_STREAMING_RADIUS_METERS (float)
 ## O que: Raio de visão para streaming de chunks em metros (1500.0m).
@@ -134,42 +143,68 @@ func _start_client() -> void:
 	print("[CLIENT] Iniciando Cliente Gráfico Godotage II...")
 	print("=======================================================\n")
 
-	# 1. Servidor local embutido para amostragem matemática de física
-	_server_world = ServerWorldManagerClass.new(MAPS_BASE_PATH)
-	_server_world.load_all_available_chunks()
-
-	# 2. Configura Gerenciador de Streaming do Mundo
+	# 1. Configura Gerenciador de Streaming do Mundo
 	_world_chunk_manager = WorldChunkManagerClass.new(MAPS_BASE_PATH, DEFAULT_STREAMING_RADIUS_METERS)
 	_world_chunk_manager.name = "WorldChunkManager"
 	add_child(_world_chunk_manager)
 
 	var registered_chunks = _world_chunk_manager.register_available_chunks()
 
-	# 3. Configura Atmosfera e Iluminação Solar
+	# 2. Configura Atmosfera e Iluminação Solar
 	var primary_chunk = registered_chunks[0] if not registered_chunks.is_empty() else FALLBACK_ENV_CHUNK
 	_setup_environment(primary_chunk)
 
-	# 4. Instancia Avatar do Jogador
+	# 3. Instancia Avatar do Jogador
 	_local_player = PlayerAvatarClass.new()
 	_local_player.name = "PlayerAvatar"
-	_local_player.position = SPAWN_POS
+	_local_player.position = _calculate_spawn_position()
 	add_child(_local_player)
 
 	# Força streaming inicial síncrono ao redor do spawn
 	_world_chunk_manager.update_streaming(_local_player.position, false)
 
-	# 5. Instancia HUD de Telemetria
+	# 4. Instancia HUD de Telemetria
 	_debug_hud = DebugHUDClass.new()
 	_debug_hud.name = "DebugHUD"
 	add_child(_debug_hud)
 
-	# 6. Conexão de Rede Opcional
+	# 5. Conexão de Rede Opcional
 	if is_inside_tree():
 		var qn = get_node_or_null("/root/QuanticNet")
 		if qn and qn.has_method("join"):
 			var args = OS.get_cmdline_user_args()
 			var use_netem = "--netem" in args
 			qn.join(DEFAULT_LOCAL_IP, DEFAULT_PORT, DEFAULT_SECRET, use_netem)
+
+
+func _calculate_spawn_position() -> Vector3:
+	var target_chunk = SPAWN_ON_MAP if (not SPAWN_ON_MAP.is_empty() and SPAWN_ON_MAP != "null") else FALLBACK_ENV_CHUNK
+	var meta = _resource_adapter.load_chunk_meta_dict(target_chunk, true)
+	if not meta.is_empty() and meta.has("world_origin_meters"):
+		var orig = meta.get("world_origin_meters", [0.0, 0.0, 0.0])
+		var sx = float(orig[0])
+		var sz = float(orig[2])
+		var sy = float(orig[1])
+
+		# Amostragem matemática via HeightfieldSampler pura no cliente (zero dependência de rede/servidor)
+		var hf_bytes = _resource_adapter.load_heightfield_bytes(target_chunk)
+		if not hf_bytes.is_empty():
+			var chunk_data = TerrainChunkDataClass.new()
+			chunk_data.from_meta_dictionary(meta)
+			var sampler = HeightfieldSamplerClass.new(
+				hf_bytes,
+				chunk_data.grid_width,
+				chunk_data.grid_depth,
+				chunk_data.cell_size_x,
+				chunk_data.cell_size_z,
+				chunk_data.world_origin,
+			)
+			sy = sampler.get_height_at(sx, sz)
+			return Vector3(sx, sy + 2.0, sz)
+		elif not SPAWN_ON_MAP.is_empty() and SPAWN_ON_MAP != "null":
+			return Vector3(sx, sy + 2.0, sz)
+
+	return SPAWN_POS
 
 
 func _setup_environment(chunk_name: String) -> void:
@@ -204,22 +239,37 @@ func _process(_delta: float) -> void:
 		_world_chunk_manager.update_streaming(_local_player.position, true)
 
 	# Atualiza telemetria do HUD
-	if _debug_hud and _server_world:
-		var c_name = _server_world.get_chunk_name_at(
-			_local_player.position.x,
-			_local_player.position.z,
-		)
-		var alt_info = _server_world.get_altitude_at(
-			_local_player.position.x,
-			_local_player.position.z,
-		)
-		var ground_alt = float(alt_info.get("altitude", 0.0))
+	if _debug_hud:
+		var c_name = ""
+		var ground_alt = _local_player.position.y
+		if _server_world:
+			c_name = _server_world.get_chunk_name_at(
+				_local_player.position.x,
+				_local_player.position.z,
+			)
+			var alt_info = _server_world.get_altitude_at(
+				_local_player.position.x,
+				_local_player.position.z,
+			)
+			ground_alt = float(alt_info.get("altitude", 0.0))
+		else:
+			var coords = _get_chunk_indices_at(_local_player.position.x, _local_player.position.z)
+			c_name = "%d_%d" % [coords.x, coords.y]
+
 		_debug_hud.update_telemetry(
 			_local_player.position,
 			c_name,
 			ground_alt,
 			_wireframe_active,
 		)
+
+
+func _get_chunk_indices_at(world_x: float, world_z: float) -> Vector2i:
+	var chunk_w = 2621.44
+	var chunk_d = 2621.44
+	var cx = int(floor((world_x + (20 * chunk_w)) / chunk_w))
+	var cy = int(floor((world_z + (18 * chunk_d)) / chunk_d))
+	return Vector2i(cx, cy)
 
 
 func _input(event: InputEvent) -> void:
@@ -239,6 +289,34 @@ func _input(event: InputEvent) -> void:
 			if _debug_hud:
 				_debug_hud.toggle_visibility()
 				print("[DEBUG] HUD Visibilidade: ", "LIGADA" if _debug_hud.visible else "OCULTA")
+
+		# Tecla F4: Salva o estado atual de corpos d'água na memória para water_volumes_fix.json
+		elif event.keycode == KEY_F4 or event.physical_keycode == KEY_F4:
+			_save_current_chunk_water_fix()
+
+
+func _save_current_chunk_water_fix() -> void:
+	if not _local_player or not _world_chunk_manager:
+		return
+
+	var current_chunk = ""
+	if _server_world:
+		current_chunk = _server_world.get_chunk_name_at(
+			_local_player.position.x,
+			_local_player.position.z,
+		)
+	else:
+		var coords = _get_chunk_indices_at(_local_player.position.x, _local_player.position.z)
+		current_chunk = "%d_%d" % [coords.x, coords.y]
+
+	if current_chunk.is_empty():
+		current_chunk = FALLBACK_ENV_CHUNK
+
+	var success = _world_chunk_manager.save_water_volumes_fix_for_chunk(current_chunk)
+	if success:
+		print("[DEBUG] [F4] water_volumes_fix.json salvo com sucesso para o chunk '%s'." % current_chunk)
+	else:
+		print("[DEBUG] [F4] Falha ao salvar water_volumes_fix.json para o chunk '%s'." % current_chunk)
 
 
 func _notification(what: int) -> void:

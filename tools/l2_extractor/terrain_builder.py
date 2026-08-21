@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 import struct
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 import numpy as np
 from PIL import Image
 
@@ -619,27 +619,7 @@ class TerrainChunkCompiler:
                     generated.append(splat_path)
                     splat_idx += 1
 
-        # 5. terrain_recipe.json (com suporte a overrides manuais)
-        fix_root = self.chunk_dir / "terrain_recipe_fix.json"
-        fix_client = self.client_dir / "terrain_recipe_fix.json"
-        fix_path = fix_root if fix_root.exists() else (fix_client if fix_client.exists() else None)
-        if fix_path:
-            try:
-                with open(fix_path, "r", encoding="utf-8") as ff:
-                    fix_data = json.load(ff)
-                    layers_fix = fix_data.get("layers", {})
-                    if isinstance(layers_fix, dict):
-                        for lay in recipe_layers:
-                            if isinstance(lay, dict):
-                                l_idx = str(lay.get("layer_index", -1))
-                                tex_f = str(lay.get("texture_file", ""))
-                                for fix_key, override in layers_fix.items():
-                                    if fix_key in tex_f or fix_key == l_idx:
-                                        if isinstance(override, dict):
-                                            lay.update(override)
-            except Exception:
-                pass
-
+        # 5. terrain_recipe.json (dados brutos extraídos do chunk)
         recipe = {
             "chunk_name": self.clean_stem,
             "lightmap": None,
@@ -654,6 +634,62 @@ class TerrainChunkCompiler:
         return generated
 
 
+def get_neighbor_chunk_indices(cx: int, cy: int) -> List[Tuple[int, int]]:
+    """
+    Retorna as coordenadas dos 8 vizinhos (4 ortogonais + 4 diagonais) de um chunk (cx, cy).
+    """
+    return [
+        (cx, cy - 1),      # Norte
+        (cx, cy + 1),      # Sul
+        (cx - 1, cy),      # Oeste
+        (cx + 1, cy),      # Leste
+        (cx - 1, cy - 1),  # Noroeste
+        (cx + 1, cy - 1),  # Nordeste
+        (cx - 1, cy + 1),  # Sudoeste
+        (cx + 1, cy + 1),  # Sudeste
+    ]
+
+
+def find_adjacent_compiled_neighbors(
+    target_stems: Iterable[str],
+    output_dir: Union[str, Path],
+    l2_maps_dir: Optional[Union[str, Path]] = None,
+) -> List[Path]:
+    """
+    Descobre automaticamente chunks vizinhos adjacentes que já foram compilados anteriormente
+    em output_dir ou que possuem arquivo .unr em l2_maps_dir, garantindo a costura contínua
+    mesmo quando compilar apenas um único mapa ou lotes parciais.
+    """
+    out_path = Path(output_dir)
+    target_set = {s.lower() for s in target_stems}
+    adjacent_found: Set[str] = set()
+
+    for s in target_set:
+        parts = [int(p) for p in s.split("_") if p.isdigit()]
+        if len(parts) >= 2:
+            cx, cy = parts[0], parts[1]
+            for n_cx, n_cy in get_neighbor_chunk_indices(cx, cy):
+                n_name = f"{n_cx}_{n_cy}"
+                if n_name not in target_set:
+                    # Verifica se o vizinho já foi compilado anteriormente em output_dir
+                    chunk_meta = out_path / n_name / "server" / "chunk_meta.json"
+                    recipe = out_path / n_name / "client" / "terrain_recipe.json"
+                    if chunk_meta.is_file() or recipe.is_file():
+                        adjacent_found.add(n_name)
+
+    # Resolve os arquivos .unr correspondentes para os vizinhos encontrados
+    neighbor_unrs: List[Path] = []
+    if l2_maps_dir:
+        maps_p = Path(l2_maps_dir)
+        if maps_p.is_dir():
+            for n_name in sorted(adjacent_found):
+                unr_file = maps_p / f"{n_name}.unr"
+                if unr_file.is_file():
+                    neighbor_unrs.append(unr_file)
+
+    return neighbor_unrs
+
+
 def compile_cluster(
     input_files: List[Union[str, Path]],
     output_dir: Union[str, Path],
@@ -666,19 +702,31 @@ def compile_cluster(
     """
     Compila um lote de chunks executando o algoritmo 2-Pass Seamless Alignment
     para unir as bordas do relevo com continuidade de derivada zero.
+    Identifica e inclui automaticamente vizinhos preexistentes no disco.
     """
     cfg = config or PipelineConfig(unit_scale=unit_scale)
     start_time = time.time()
     compilers: Dict[str, TerrainChunkCompiler] = {}
     extracted_data: Dict[str, Any] = {}
 
+    out_path = Path(output_dir)
+    l2_maps = Path(l2_root) / "maps" if l2_root else None
+    explicit_stems = {Path(inp).stem.lower() for inp in input_files}
+    discovered_neighbors = find_adjacent_compiled_neighbors(explicit_stems, out_path, l2_maps)
+
+    all_inputs = list(input_files)
+    for n_unr in discovered_neighbors:
+        if n_unr not in all_inputs:
+            all_inputs.append(n_unr)
+            print(f"[*] [Auto-Stitcher] Vizinho preexistente detectado: {n_unr.stem} -> Incluído para costura contínua.")
+
     print("\n" + "=" * 80)
     print(f"[*] GODOTAGE II — COMPILADOR DE TERRENO EM LOTE (2-PASS SEAMLESS)")
-    print(f"[*] Total de Chunks a Processar: {len(input_files)}")
+    print(f"[*] Total de Chunks a Processar: {len(all_inputs)} ({len(input_files)} solicitados + {len(discovered_neighbors)} vizinhos)")
     print("=" * 80)
 
     # 1. Extração de Todos os Heightmaps do Cluster
-    for inp in input_files:
+    for inp in all_inputs:
         comp = TerrainChunkCompiler(inp, output_dir, l2_root, unit_scale, config=cfg)
         c_name = comp.clean_stem
         compilers[c_name] = comp

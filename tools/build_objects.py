@@ -335,31 +335,7 @@ def process_chunk_objects(
 
     print(f"    -> Total de malhas 3D (.glb) compiladas: {extracted_count}")
 
-    # Aplica overrides se chunk_static_actors_fix.json existir
     chunk_root = maps_dir / clean_name
-    fix_json_path = chunk_root / "chunk_static_actors_fix.json"
-    if fix_json_path.is_file():
-        try:
-            with open(fix_json_path, "r", encoding="utf-8") as f:
-                fix_data = json.load(f)
-            fix_actors = fix_data.get("actors", [])
-            fix_map = {a.get("actor_name"): a for a in fix_actors if a.get("actor_name")}
-            applied_fixes = 0
-            for a in actors:
-                a_name = a.get("actor_name")
-                if a_name in fix_map:
-                    override = fix_map[a_name]
-                    if "transform" in override:
-                        for k, v in override["transform"].items():
-                            a["transform"][k] = v
-                    if "mesh_ref" in override:
-                        a["mesh_ref"] = override["mesh_ref"]
-                    applied_fixes += 1
-            if applied_fixes > 0:
-                print(f"    -> [+] {applied_fixes} override(s) manual(is) aplicado(s) de: {fix_json_path.name}")
-        except Exception as e:
-            print(f"    -> [AVISO] Falha ao ler overrides de {fix_json_path.name}: {e}", file=sys.stderr)
-
     chunk_root.mkdir(parents=True, exist_ok=True)
 
     actors_meta = {

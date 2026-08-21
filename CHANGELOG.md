@@ -9,9 +9,16 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- **Gerenciamento Dinâmico de Corpos d'Água e Overrides em Runtime**:
+  - Sobrescrita dinâmica em tempo de execução para `water_volumes_fix.json`, permitindo ajuste de cotas de superfície, dimensões e novos corpos d'água em memória via `ChunkResourceAdapter`.
+  - Atalho de depuração `F4` no `main.gd` para serialização imediata do estado atual dos corpos d'água em memória do chunk ativo diretamente para `water_volumes_fix.json`.
+  - Configuração de ponto de spawn dinâmico por chunk (`SPAWN_ON_MAP`), calculando a cota inicial com base nos metadados do mapa.
+  - Testes unitários GUT para mesclagem em memória e gravação em disco de `water_volumes_fix.json`.
 - **Revisão e Refinamento Arquitetural do Pipeline**:
+  - Preservação estrita de dados *raw* originais na compilação (`build_objects.py` e `terrain_builder.py`), eliminando o acoplamento de arquivos `*_fix.json` durante a build.
   - Centralização de configurações globais e constantes semânticas em `tools/l2_extractor/config.py` com injeção de dependências (`PipelineConfig`).
   - Módulo de *Pre-flight Health Check* (`tools/l2_extractor/validator.py`) com verificação rigorosa de integridade antes da execução do pipeline.
+  - Sistema de **Costura Automática de Vizinhos (*Auto-Neighbor Stitcher*)**: descobre e costura incrementalmente chunks adjacentes preexistentes no disco sem necessidade de informar dependências manualmente.
   - Ferramenta unificada de diagnóstico e validação de continuidade métrica `tools/inspect_map.py`.
   - Argumentos CLI `--help` / `-h` detalhados com documentação, exemplos práticos de uso e tratamento resiliente de erros em todos os scripts.
   - Bateria de testes automatizados TDD (AAA) para validação de ambiente e configuração em `tools/l2_extractor/test_extractor.py`.
@@ -19,6 +26,8 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
   - Aplicação estrita do formato de cabeçalho padrão de `GEMINI.md` (`@file`, `@path`, `@description`, `@created`, `@updated`, `@author`) em 100% dos scripts GDScript.
   - Mapeamento e extração de constantes semânticas tipadas com documentação de "O que" e "Porque" em todas as camadas de Domain, Use Cases, Adapters, Infrastructure e Composition Root (`main.gd`).
   - Autodescoberta dinâmica de chunks em `assets/maps` via `ChunkResourceAdapter.get_available_chunks()`, eliminando listas hardcoded (`KNOWN_CHUNKS`).
+  - Renderização automática e sob demanda de corpos d'água locais e rios/fossos em cotas personalizadas via `L2TerrainChunkNode` com posicionamento global exato (`top_level`).
+  - Suporte semântico a renderização Two-Sided (`cull_mode = CULL_DISABLED`) em bandeiras, tecidos, tendas, cercas e folhagens, com fallback neutro para malhas pendentes de texturização.
   - Limpeza de linhas comentadas, código morto e referências obsoletas em todo o projeto.
 
 ### Alterado
@@ -33,6 +42,8 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Removido
 
+- Plano de oceano genérico global (`OceanPlaneNode` / `setup_ocean`) e dependências associadas em favor dos volumes de água definidos por chunk (`water_volumes.json`).
+- Aplicação prévia de arquivos `*_fix.json` nas ferramentas de build (`build_objects.py` e `terrain_builder.py`).
 - Recurso descontinuado de depuração de materiais por seção (`_debug_materials_active`, `set_debug_materials_mode`, `UMODEL_PALETTE`, `_original_materials`).
 - Diretório de código legado/monolítico `draft/` (`draft/tools/l2_build_chunk.py`, `draft/build_maps.ps1`, etc.).
 - Pastas temporárias de testes manuais `test_output_meshes/`, `test_output_textures/` e `scratch/`.

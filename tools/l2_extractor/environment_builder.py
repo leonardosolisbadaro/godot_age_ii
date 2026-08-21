@@ -82,28 +82,91 @@ def ue2_rotator_to_direction_vector(pitch: int, yaw: int, roll: int = 0) -> List
     return [0.0, -1.0, 0.0]
 
 
+def _safe_get_vector3(val: Any, default: Tuple[float, float, float] = (0.0, 0.0, 0.0)) -> Tuple[float, float, float]:
+    """Extrai com segurança uma tripla de coordenadas (X, Y, Z) de qualquer estrutura."""
+    if val is None:
+        return default
+    if isinstance(val, dict) and val.get("_is_array"):
+        val = val.get(0, default)
+    if isinstance(val, (list, tuple)):
+        if len(val) > 0 and isinstance(val[0], (list, tuple)):
+            val = val[0]
+        try:
+            x = float(val[0]) if len(val) > 0 and val[0] is not None else default[0]
+            y = float(val[1]) if len(val) > 1 and val[1] is not None else default[1]
+            z = float(val[2]) if len(val) > 2 and val[2] is not None else default[2]
+            return (x, y, z)
+        except (ValueError, TypeError, IndexError):
+            return default
+    return default
+
+
+def _safe_get_color(val: Any, default: Tuple[int, int, int] = (255, 255, 255)) -> Tuple[int, int, int]:
+    """Extrai com segurança uma tripla de cores RGB [0..255]."""
+    if val is None:
+        return default
+    if isinstance(val, dict) and val.get("_is_array"):
+        val = val.get(0, default)
+    if isinstance(val, (list, tuple)):
+        try:
+            r = int(val[0]) if len(val) > 0 and val[0] is not None else default[0]
+            g = int(val[1]) if len(val) > 1 and val[1] is not None else default[1]
+            b = int(val[2]) if len(val) > 2 and val[2] is not None else default[2]
+            return (r, g, b)
+        except (ValueError, TypeError, IndexError):
+            return default
+    return default
+
+
+def _safe_get_float(val: Any, default: float = 0.0) -> float:
+    """Converte com segurança qualquer valor para float, usando default se nulo ou inválido."""
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def extract_model_bounds(
+    reader: UnrealPackageReader, model_exp: Dict[str, Any]
+) -> Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:
+    """Extrai os limites tridimensionais (BoundingBox FBox) de um Model/Brush da UE2."""
+    data = reader.data[model_exp["offset"] : model_exp["offset"] + model_exp["size"]]
+    if len(data) >= 25:
+        for off in range(len(data) - 25, max(0, len(data) - 120), -1):
+            floats = struct.unpack_from("<ffffff", data, off)
+            if floats[0] <= floats[3] and floats[1] <= floats[4] and floats[2] <= floats[5]:
+                if all(abs(f) < 2000000.0 for f in floats):
+                    return (
+                        (floats[0], floats[1], floats[2]),
+                        (floats[3], floats[4], floats[5]),
+                    )
+    return None
+
+
 def extract_map_environment(
     map_pkg: UnrealPackageReader,
     unit_scale: float = UU_TO_METERS_CANONICAL,
     config: Optional[PipelineConfig] = None,
 ) -> Dict[str, Any]:
     """
-    Analisa um arquivo .unr e extrai todos os parâmetros de atmosfera, luz solar,
-    ZoneInfo e volumes de água.
+    Varre os exports do pacote de mapa buscando instâncias de ZoneInfo, Sunlight,
+    WaterVolume, NMoon e PointLights para montar a receita de atmosfera 1:1.
     """
     env_data: Dict[str, Any] = {
         "sunlight": None,
         "moonlight": None,
-        "ambient_lighting": None,
         "distance_fog": None,
+        "ambient_lighting": None,
         "sky_info": None,
         "water_volumes": [],
         "point_lights": [],
     }
 
     for exp in map_pkg.exports:
-        c_name = exp["class_name"]
-        o_name = exp["object_name"]
+        c_name = exp.get("class_name", "")
+        o_name = exp.get("object_name", "")
 
         if c_name in (
             "NMovableSunLight",
@@ -122,17 +185,12 @@ def extract_map_environment(
             # 1. Luz Solar Principal
             if c_name in ("NMovableSunLight", "Sunlight") and env_data["sunlight"] is None:
                 rot = props.get("Rotation", (0, 0, 0))
-                if isinstance(rot, dict) and rot.get("_is_array"):
-                    rot = rot.get(0, (0, 0, 0))
-                if isinstance(rot, (list, tuple)) and len(rot) > 0 and isinstance(rot[0], (list, tuple)):
-                    rot = rot[0]
-                p_val = int(rot[0]) if len(rot) > 0 and not isinstance(rot[0], (list, tuple, dict)) else 0
-                y_val = int(rot[1]) if len(rot) > 1 and not isinstance(rot[1], (list, tuple, dict)) else 0
-                r_val = int(rot[2]) if len(rot) > 2 and not isinstance(rot[2], (list, tuple, dict)) else 0
+                rot_vec = _safe_get_vector3(rot, (0.0, 0.0, 0.0))
+                p_val, y_val, r_val = int(rot_vec[0]), int(rot_vec[1]), int(rot_vec[2])
                 dir_vec = ue2_rotator_to_direction_vector(p_val, y_val, r_val)
                 tex_mod = props.get("TexModifyInfo", {})
-                color = tex_mod.get("Color", [255, 245, 230, 255])
-                brightness = float(props.get("LightBrightness", 1.0))
+                color = _safe_get_color(tex_mod.get("Color") if isinstance(tex_mod, dict) else None, (255, 245, 230))
+                brightness = _safe_get_float(props.get("LightBrightness"), 1.0)
                 if brightness <= 0.01:
                     brightness = 1.0
 
@@ -151,14 +209,14 @@ def extract_map_environment(
 
             # 2. Lua / Luz Noturna
             elif c_name == "NMoon" and env_data["moonlight"] is None:
-                loc = props.get("Location", [0.0, 0.0, 0.0])
+                loc = _safe_get_vector3(props.get("Location"), (0.0, 0.0, 0.0))
                 pos_m = [
                     round(loc[0] * unit_scale, 2),
                     round(loc[2] * unit_scale, 2),
                     round(loc[1] * unit_scale, 2),
                 ]
                 tex_mod = props.get("TexModifyInfo", {})
-                color = tex_mod.get("Color", [200, 220, 255, 255])
+                color = _safe_get_color(tex_mod.get("Color") if isinstance(tex_mod, dict) else None, (200, 220, 255))
 
                 env_data["moonlight"] = {
                     "name": o_name,
@@ -172,9 +230,9 @@ def extract_map_environment(
 
             # 3. ZoneInfo (Névoa e Luz Ambiente)
             elif c_name == "ZoneInfo":
-                fog_color = props.get("DistanceFogColor", [180, 200, 220, 255])
-                fog_start = float(props.get("DistanceFogStart", 1000.0)) * unit_scale
-                fog_end = float(props.get("DistanceFogEnd", 80000.0)) * unit_scale
+                fog_color = _safe_get_color(props.get("DistanceFogColor"), (180, 200, 220))
+                fog_start = _safe_get_float(props.get("DistanceFogStart"), 1000.0) * unit_scale
+                fog_end = _safe_get_float(props.get("DistanceFogEnd"), 80000.0) * unit_scale
                 if fog_end <= fog_start:
                     fog_end = 800.0
 
@@ -189,7 +247,7 @@ def extract_map_environment(
                     "end_meters": round(fog_end, 2),
                 }
 
-                amb_color = props.get("AmbientLightColor", [120, 130, 140, 255])
+                amb_color = _safe_get_color(props.get("AmbientLightColor"), (120, 130, 140))
                 env_data["ambient_lighting"] = {
                     "color_rgb": [
                         round(amb_color[0] / 255.0, 4),
@@ -201,43 +259,66 @@ def extract_map_environment(
 
             # 4. SkyZoneInfo
             elif c_name == "SkyZoneInfo" and env_data["sky_info"] is None:
-                loc = props.get("Location", (0.0, 0.0, 0.0))
-                if isinstance(loc, dict) and loc.get("_is_array"):
-                    loc = loc.get(0, (0.0, 0.0, 0.0))
-                lx = float(loc[0]) if len(loc) > 0 else 0.0
-                ly = float(loc[1]) if len(loc) > 1 else 0.0
-                lz = float(loc[2]) if len(loc) > 2 else 0.0
+                loc = _safe_get_vector3(props.get("Location"), (0.0, 0.0, 0.0))
                 env_data["sky_info"] = {
                     "name": o_name,
                     "camera_location_m": [
-                        round(lx * unit_scale, 2),
-                        round(lz * unit_scale, 2),
-                        round(ly * unit_scale, 2),
+                        round(loc[0] * unit_scale, 2),
+                        round(loc[2] * unit_scale, 2),
+                        round(loc[1] * unit_scale, 2),
                     ],
                 }
 
             # 5. WaterVolume
             elif c_name == "WaterVolume":
-                loc = props.get("Location", (0.0, 0.0, 0.0))
-                if isinstance(loc, dict) and loc.get("_is_array"):
-                    loc = loc.get(0, (0.0, 0.0, 0.0))
-                lz = float(loc[2]) if len(loc) > 2 else -10.0
-                water_z = lz * unit_scale
+                loc = _safe_get_vector3(props.get("Location"), (0.0, 0.0, -3776.0))
+                brush_ref = props.get("Brush")
+                bounds = None
+                if brush_ref and isinstance(brush_ref, dict):
+                    m_name = brush_ref.get("object_name", "")
+                    m_exps = [
+                        x
+                        for x in map_pkg.exports
+                        if x.get("class_name") == "Model" and x.get("object_name") == m_name
+                    ]
+                    if m_exps:
+                        bounds = extract_model_bounds(map_pkg, m_exps[0])
+
+                if bounds:
+                    min_v, max_v = bounds
+                    center_x = (loc[0] + (min_v[0] + max_v[0]) / 2.0) * unit_scale
+                    center_z = (loc[1] + (min_v[1] + max_v[1]) / 2.0) * unit_scale
+                    size_x = max(1.0, (max_v[0] - min_v[0]) * unit_scale)
+                    size_z = max(1.0, (max_v[1] - min_v[1]) * unit_scale)
+                    surface_y = (loc[2] + max_v[2]) * unit_scale
+                    bottom_y = (loc[2] + min_v[2]) * unit_scale
+                else:
+                    center_x = loc[0] * unit_scale
+                    center_z = loc[1] * unit_scale
+                    size_x = 2621.44
+                    size_z = 2621.44
+                    surface_y = loc[2] * unit_scale if loc[2] != -10.0 else -320.0
+                    bottom_y = surface_y - 10.0
+
                 env_data["water_volumes"].append(
                     {
                         "name": o_name,
-                        "water_plane_height_m": round(water_z, 2),
-                        "fluid_friction": float(props.get("FluidFriction", 1.2)),
+                        "center_m": [round(center_x, 2), round(center_z, 2)],
+                        "size_m": [round(size_x, 2), round(size_z, 2)],
+                        "water_plane_height_m": round(surface_y, 2),
+                        "surface_y_m": round(surface_y, 2),
+                        "bottom_y_m": round(bottom_y, 2),
+                        "fluid_friction": _safe_get_float(props.get("FluidFriction"), 1.2),
                         "b_water_volume": True,
                     }
                 )
 
             # 6. Luzes Pontuais (Tochas, Postes, Fontes)
             elif c_name == "Light":
-                loc = props.get("Location", [0.0, 0.0, 0.0])
-                color = props.get("LightColor", [255, 220, 180])
-                radius = float(props.get("LightRadius", 64.0)) * unit_scale * 10.0
-                brightness = float(props.get("LightBrightness", 1.0))
+                loc = _safe_get_vector3(props.get("Location"), (0.0, 0.0, 0.0))
+                color = _safe_get_color(props.get("LightColor"), (255, 220, 180))
+                radius = _safe_get_float(props.get("LightRadius"), 64.0) * unit_scale * 10.0
+                brightness = _safe_get_float(props.get("LightBrightness"), 1.0)
                 env_data["point_lights"].append(
                     {
                         "name": o_name,

@@ -6,13 +6,14 @@
 ## estáticos de um chunk em lote de alta performance via MultiMeshInstance3D.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-20
+## @updated 2026-08-21
 ##
 ## @author Leonardo S. Badaró
 extends Node3D
 
 const ChunkResourceAdapterClass = preload("res://src/adapters/chunk_resource_adapter.gd")
 const StaticMeshInstanceAdapterClass = preload("res://src/adapters/static_mesh_instance_adapter.gd")
+const StaticMeshInstanceDataClass = preload("res://src/domain/static_mesh_instance_data.gd")
 const RuntimeAssetCacheClass = preload("res://src/infrastructure/runtime_asset_cache.gd")
 
 # ==============================================================================
@@ -113,6 +114,59 @@ func build_static_meshes() -> void:
 				_multimesh_nodes.append(mm_node)
 				add_child(mm_node)
 
+	_setup_static_mesh_collisions()
+
+
+func _setup_static_mesh_collisions() -> void:
+	if _parsed_instances.is_empty():
+		return
+
+	var body = StaticBody3D.new()
+	body.name = "StaticMeshesCollisionBody"
+
+	for inst in _parsed_instances:
+		if not (inst is StaticMeshInstanceDataClass):
+			continue
+
+		var m_name = inst.mesh_name.to_lower()
+		var a_name = inst.actor_name.to_lower()
+		var p_name = inst.mesh_resource_path.to_lower()
+
+		# Identifica se é um objeto obstrutivo sólido (árvores, muros, construções, rochas, etc.)
+		var is_solid = false
+		for kw in [
+			"tree", "wall", "house", "building", "fence", "rock", "stone",
+			"pillar", "column", "statue", "gate", "door", "bridge", "tower",
+			"ruin", "stair", "temple", "fort", "castle", "monument", "box", "crate"
+		]:
+			if kw in m_name or kw in a_name or kw in p_name:
+				is_solid = true
+				break
+
+		if not is_solid:
+			continue
+
+		var shape_node = CollisionShape3D.new()
+		var shape = BoxShape3D.new()
+
+		# Dimensões da caixa de colisão baseada no base_aabb e escala
+		var w_size = inst.base_aabb.size * inst.scale
+		var sx = maxf(0.5, absf(w_size.x))
+		var sy = maxf(0.5, absf(w_size.y))
+		var sz = maxf(0.5, absf(w_size.z))
+		shape.size = Vector3(sx, sy, sz)
+
+		shape_node.shape = shape
+		var aabb_center = inst.base_aabb.position + (inst.base_aabb.size * 0.5)
+		var local_offset = aabb_center * inst.scale
+
+		var b = Basis.from_euler(inst.rotation_radians)
+		shape_node.transform = Transform3D(b, inst.position + b * local_offset)
+		body.add_child(shape_node)
+
+	if body.get_child_count() > 0:
+		add_child(body)
+
 
 func _load_mesh_resource(mesh_path: String) -> Mesh:
 	return RuntimeAssetCacheClass.get_or_load_mesh(mesh_path)
@@ -167,14 +221,8 @@ func _get_or_create_material(mat_name: String) -> Material:
 			if tex:
 				break
 
-	if not tex:
-		return null
-
-	var std_mat = StandardMaterial3D.new()
-	std_mat.albedo_texture = tex
-	std_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-
-	# Detecção inteligente de folhagens e vegetação (Árvores, Folhas, Arbustos)
+	# Detecção inteligente de folhagens, tecidos, bandeiras e adereços planos (Two-Sided)
+	var is_two_sided = false
 	var is_foliage = false
 	for v in name_variants:
 		if (
@@ -182,7 +230,27 @@ func _get_or_create_material(mat_name: String) -> Material:
 			or "flower" in v or "fern" in v or "ivy" in v or "plant" in v or "flora" in v
 		):
 			is_foliage = true
+			is_two_sided = true
 			break
+		elif (
+			"banner" in v or "flag" in v or "cloth" in v or "tent" in v or "fence" in v
+			or "curtain" in v or "rope" in v or "chain" in v or "deco" in v or "bone" in v
+		):
+			is_two_sided = true
+			break
+
+	if not tex:
+		# Fallback neutro com cull_mode desabilitado para evitar faces traseiras invisíveis
+		var fallback_mat = StandardMaterial3D.new()
+		fallback_mat.albedo_color = Color(0.75, 0.72, 0.68, 1.0)
+		fallback_mat.roughness = 0.8
+		fallback_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_material_cache[clean_name] = fallback_mat
+		return fallback_mat
+
+	var std_mat = StandardMaterial3D.new()
+	std_mat.albedo_texture = tex
+	std_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 
 	var blend_mode = recipe.get("alpha_blend_mode", "Opaque")
 	if is_foliage or blend_mode == "AlphaTest" or blend_mode == "AlphaBlend":
@@ -194,7 +262,7 @@ func _get_or_create_material(mat_name: String) -> Material:
 		std_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 		std_mat.roughness = FOLIAGE_ROUGHNESS
 
-	if is_foliage or recipe.get("two_sided", false):
+	if is_two_sided or recipe.get("two_sided", false):
 		std_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 	_material_cache[clean_name] = std_mat

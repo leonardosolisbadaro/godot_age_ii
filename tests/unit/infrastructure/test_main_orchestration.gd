@@ -5,7 +5,7 @@
 ## Testes unitários AAA para a orquestração da cena principal (main.gd).
 ##
 ## @created 2026-08-19
-## @updated 2026-08-19
+## @updated 2026-08-21
 ##
 ## @author Leonardo S. Badaró
 extends GutTest
@@ -44,3 +44,18 @@ func test_main_server_orchestration() -> void:
 
 	# Cleanup
 	main_scene.free()
+
+
+func test_calculate_spawn_position_fallback_and_map() -> void:
+	# Arrange
+	var main_scene = MainScript.new()
+
+	# Act
+	var spawn_pos = main_scene._calculate_spawn_position()
+
+	# Assert
+	assert_ne(spawn_pos, Vector3.ZERO, "Spawn position não deve ser zero")
+
+	# Cleanup
+	main_scene.free()
+

@@ -361,6 +361,35 @@ class StaticMeshParser:
         }
 
 
+def _safe_get_vector3(
+    val: Any, default: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+) -> Tuple[float, float, float]:
+    """Extrai com segurança uma tupla de 3 floats (X, Y, Z)."""
+    if val is None:
+        return default
+    if isinstance(val, dict) and val.get("_is_array"):
+        val = val.get(0, default)
+    if isinstance(val, (list, tuple)):
+        try:
+            x = float(val[0]) if len(val) > 0 and val[0] is not None else default[0]
+            y = float(val[1]) if len(val) > 1 and val[1] is not None else default[1]
+            z = float(val[2]) if len(val) > 2 and val[2] is not None else default[2]
+            return (x, y, z)
+        except (ValueError, TypeError, IndexError):
+            return default
+    return default
+
+
+def _safe_get_float(val: Any, default: float = 1.0) -> float:
+    """Converte com segurança qualquer valor para float, usando default se nulo ou inválido."""
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
 def extract_map_static_actors(
     map_package: UnrealPackageReader,
     unit_scale: float = UU_TO_METERS_CANONICAL,
@@ -376,7 +405,7 @@ def extract_map_static_actors(
             t_props = map_package.read_properties(
                 p_start, exp["size"] - (p_start - exp["offset"])
             )
-            t_scale = t_props.get("TerrainScale", (128.0, 128.0, 76.0))
+            t_scale = _safe_get_vector3(t_props.get("TerrainScale"), (128.0, 128.0, 76.0))
             chunk_w = 256.0 * float(t_scale[0]) * unit_scale
             chunk_d = 256.0 * float(t_scale[1]) * unit_scale
             break
@@ -390,17 +419,17 @@ def extract_map_static_actors(
             )
 
             mesh_ref = props.get("StaticMesh")
-            location = props.get("Location", (0.0, 0.0, 0.0))
-            rotation = props.get("Rotation", (0, 0, 0))
-            draw_scale = float(props.get("DrawScale", 1.0) or 1.0)
-            draw_scale3d = props.get("DrawScale3D", (1.0, 1.0, 1.0))
+            if not mesh_ref:
+                continue
 
-            if isinstance(location, dict) and location.get("_is_array"):
-                location = location.get(0, (0.0, 0.0, 0.0))
-            if isinstance(rotation, dict) and rotation.get("_is_array"):
-                rotation = rotation.get(0, (0, 0, 0))
-            if isinstance(draw_scale3d, dict) and draw_scale3d.get("_is_array"):
-                draw_scale3d = draw_scale3d.get(0, (1.0, 1.0, 1.0))
+            location = _safe_get_vector3(props.get("Location"), (0.0, 0.0, 0.0))
+            rotation = _safe_get_vector3(props.get("Rotation"), (0.0, 0.0, 0.0))
+            draw_scale = _safe_get_float(props.get("DrawScale"), 1.0)
+            if draw_scale == 0.0:
+                draw_scale = 1.0
+            draw_scale3d = _safe_get_vector3(props.get("DrawScale3D"), (1.0, 1.0, 1.0))
+            if draw_scale3d == (0.0, 0.0, 0.0):
+                draw_scale3d = (1.0, 1.0, 1.0)
 
             half_chunk_w = chunk_w / 2.0
             half_chunk_d = chunk_d / 2.0
@@ -411,7 +440,7 @@ def extract_map_static_actors(
             p, y, r = (
                 int(rotation[0]),
                 int(rotation[1]),
-                int(rotation[2]) if len(rotation) > 2 else 0,
+                int(rotation[2]),
             )
             rot_euler = ue2_rotator_to_euler(p, y, r)
 

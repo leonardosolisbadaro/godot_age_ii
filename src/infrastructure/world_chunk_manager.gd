@@ -6,7 +6,7 @@
 ## e streaming contínuo de chunks visuais de terreno e atores estáticos no mundo.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-20
+## @updated 2026-08-21
 ##
 ## @author Leonardo S. Badaró
 extends Node3D
@@ -16,7 +16,6 @@ const LoadChunkMetadataUseCaseClass = preload("res://src/use_cases/load_chunk_me
 const StreamWorldChunksUseCaseClass = preload("res://src/use_cases/stream_world_chunks_use_case.gd")
 const L2TerrainChunkNodeClass = preload("res://src/infrastructure/l2_terrain_chunk_node.gd")
 const StaticMeshChunkNodeClass = preload("res://src/infrastructure/static_mesh_chunk_node.gd")
-const OceanPlaneNodeClass = preload("res://src/infrastructure/ocean_plane_node.gd")
 
 # ==============================================================================
 # CONSTANTES SEMÂNTICAS DE GERENCIAMENTO DE MUNDO
@@ -32,21 +31,6 @@ const DEFAULT_VIEW_RADIUS_METERS: float = 1200.0
 ## Porque: Inicializador de busca de menor distância.
 const INFINITE_RAY_DISTANCE: float = 999999.0
 
-## @const DEFAULT_OCEAN_LEVEL_Y (float)
-## O que: Cota de elevação mundial padrão do nível do oceano (-290.0m).
-## Porque: Altura de referência das águas costeiras de Talking Island.
-const DEFAULT_OCEAN_LEVEL_Y: float = -290.0
-
-## @const DEFAULT_OCEAN_EXTENTS (Vector2)
-## O que: Dimensões métricas do plano de oceano (5000.0m x 5000.0m).
-## Porque: Cobre o arquipélago completo.
-const DEFAULT_OCEAN_EXTENTS: Vector2 = Vector2(5000.0, 5000.0)
-
-## @const DEFAULT_OCEAN_CENTER (Vector3)
-## O que: Posição central mundial do oceano (X=-7864.0m, Y=0.0m, Z=18350.0m).
-## Porque: Ponto médio do arquipélago de Talking Island.
-const DEFAULT_OCEAN_CENTER: Vector3 = Vector3(-7864.0, 0.0, 18350.0)
-
 # ==============================================================================
 # PROPRIEDADES DO GERENCIADOR
 # ==============================================================================
@@ -58,7 +42,6 @@ var _known_chunks: Dictionary = { } # { "16_24": TerrainChunkData, ... }
 var _active_terrain_nodes: Dictionary = { } # { "16_24": L2TerrainChunkNode, ... }
 var _active_mesh_nodes: Dictionary = { } # { "16_24": StaticMeshChunkNode, ... }
 var _loading_chunks: Dictionary = { } # { "16_24": true, ... }
-var _ocean_node: MeshInstance3D
 
 var _resource_adapter: RefCounted
 var _meta_use_case: RefCounted
@@ -191,14 +174,22 @@ func unload_chunk(chunk_name: String) -> void:
 		m_node.queue_free()
 
 
-func setup_ocean(
-	water_level_y: float = DEFAULT_OCEAN_LEVEL_Y,
-	center: Vector3 = DEFAULT_OCEAN_CENTER,
-) -> void:
-	if not _ocean_node:
-		_ocean_node = OceanPlaneNodeClass.new(water_level_y, DEFAULT_OCEAN_EXTENTS, center)
-		_ocean_node.name = "OceanPlane"
-		add_child(_ocean_node)
+func get_active_terrain_node(chunk_name: String) -> Node3D:
+	return _active_terrain_nodes.get(chunk_name, null)
+
+
+func get_chunk_water_volumes(chunk_name: String) -> Dictionary:
+	var t_node = get_active_terrain_node(chunk_name)
+	if t_node and t_node.has_method("get_water_volumes_data"):
+		return t_node.get_water_volumes_data()
+	return _resource_adapter.load_water_volumes_dict(chunk_name)
+
+
+func save_water_volumes_fix_for_chunk(chunk_name: String) -> bool:
+	var data = get_chunk_water_volumes(chunk_name)
+	if data.is_empty():
+		return false
+	return _resource_adapter.save_water_volumes_fix(chunk_name, data)
 
 
 func set_wireframe_enabled(enabled: bool) -> void:

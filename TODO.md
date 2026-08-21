@@ -112,18 +112,18 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
   - [x] Implementar atalhos de teclado: `F2` (Wireframe / Overdraw / Desativado), `F3` (Toggle HUD) e encerramento limpo via `_notification()`.
   - [x] Suporte à execução dual: Cliente Gráfico (padrão) vs Servidor Headless (`--server`).
 
-- [ ] **5.2 Script de Build em Lote e Automação de Chunks (`build_maps.ps1`)**
-  - [ ] Atualizar script PowerShell para compilar em lote o cluster completo de Talking Island (`16_24`, `16_25`, `17_24`, `17_25`).
-  - [ ] Unificar a cadeia de execução CLI: `build_terrain.py` $\to$ `build_objects.py` $\to$ `build_environment.py`.
-  - [ ] Adicionar suporte a flags `--force`, logs de progresso e resumo estatístico de extração.
+- [x] **5.2 Script de Build em Lote e Automação de Chunks (`tools/build_map.py`)**
+  - [x] Unificar a cadeia de execução CLI de ponta a ponta: `build_terrain.py` $\to$ `build_objects.py` $\to$ `build_environment.py`.
+  - [x] Compilação em lote do cluster completo de Talking Island (`16_24`, `16_25`, `17_24`, `17_25`) com costura de bordas (*Auto-Neighbor Stitcher*).
+  - [x] Suporte a flags `--force`, `--skip-textures`, `--cluster`, logs de progresso e resumo estatístico de extração.
 
-- [ ] **5.3 Validação Interativa e Testes Manuais no Godot 4.7**
-  - [ ] Teste de navegação e colisão do avatar pelo relevo (caminhada, corrida com Shift, rampas e colinas).
-  - [ ] Teste de colisão e oclusão de atores estáticos (árvores `speaking_tree_s`, cercas `woodfence`, pedras e casas).
-  - [ ] Teste de visualização de Shaders (blending multi-camada de splatmaps, transparência *Alpha Scissor* e *Two-Sided* em folhagens).
-  - [ ] Teste de transição aquática no plano de oceano ($Z = 0.00\text{m}$) e profundidade.
-  - [ ] Teste de telemetria do `DebugHUD` e alternador de Wireframe (`F2`).
-  - [ ] Teste de conectividade e sincronização de rede QuanticNet (Host / Join local).
+- [x] **5.3 Validação Interativa e Testes Manuais no Godot 4.7**
+  - [x] Teste de navegação e colisão do avatar pelo relevo (caminhada, corrida com Shift, rampas e colinas).
+  - [x] Teste de colisão e oclusão de atores estáticos (árvores `speaking_tree_s`, cercas `woodfence`, pedras e casas) via `_setup_static_mesh_collisions()`.
+  - [x] Teste de visualização de Shaders (blending multi-camada de splatmaps, transparência *Alpha Scissor* e *Two-Sided* em folhagens).
+  - [x] Teste de transição aquática nos volumes locais de água (`water_volumes.json` / `water_volumes_fix.json`).
+  - [x] Teste de telemetria do `DebugHUD` e alternador de Wireframe (`F2`).
+  - [x] Teste do atalho de debug `F4` para gravação de `water_volumes_fix.json`.
 
 ---
 
@@ -148,3 +148,49 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
   - [x] Implementar argumentos `-h` / `--help` detalhados com exemplos de uso em todos os scripts (`build_map.py`, `build_terrain.py`, `build_objects.py`, `build_environment.py`, `inspect_map.py`, `clear_terrain_cache.py`).
   - [x] Implementar controle e recuperação de falha com mensagens detalhadas de causa/diagnóstico.
   - [x] Atualizar suíte de testes TDD (AAA) em `tools/l2_extractor/test_extractor.py` validando ambiente, configuração e compiladores.
+
+- [x] **6.5 Preservação de Dados RAW e Overrides em Runtime**
+  - [x] Garantir preservação estrita de dados *raw* na build (`build_objects.py` e `terrain_builder.py` não aplicam arquivos `*_fix.json`).
+  - [x] Sobrescrita dinâmica em tempo de execução via `ChunkResourceAdapter` para `chunk_static_actors_fix.json`, `terrain_recipe_fix.json` e `water_volumes_fix.json`.
+  - [x] Remoção completa do oceano genérico global em favor dos volumes locais de cada chunk.
+  - [x] Implementação de ponto de spawn dinâmico por chunk (`SPAWN_ON_MAP`) e atalho de debug `F4`.
+
+- [x] **6.6 Otimização de Colisões e Spawn Autônomo no Cliente**
+  - [x] Colisão híbrida de terreno no cliente com `HeightMapShape3D` ultraleve a partir de `heightfield.bin` e fallback para `ConcavePolygonShape3D` (`create_trimesh_shape()`) em cavernas/túneis.
+  - [x] Geração automática de colisores primitivos (`BoxShape3D`) para objetos estáticos obstrutivos (árvores, muralhas, construções, rochas, pontes) no `StaticMeshChunkNode`.
+  - [x] Cálculo de altitude de spawn 100% autônomo no cliente usando `HeightfieldSampler` de domínio puro (zero dependência de servidor ativo).
+
+---
+
+## Fase 7: Rede e Sincronização Autoritativa QuanticNet (Multiplayer & Netcode)
+
+- [ ] **7.1 Ciclo de Vida de Conexão, Handshake e Autenticação (`QuanticNet`)**
+  - [ ] Implementar orquestração de conexão do cliente (`join`) com estados `CONNECTING`, `AUTHENTICATING`, `CONNECTED`, `FAILED`.
+  - [ ] Configuração de porta (`PORT 4242`), senha de handshake (`secret`) e suporte a fallback de modo offline/standalone (`--offline` / `--solo`).
+  - [ ] Tratamento de encerramento gracioso via `_notification(NOTIFICATION_WM_CLOSE_REQUEST)` liberando sockets UDP.
+
+- [ ] **7.2 Replicação de Estado de Entidades & Avatares Remotos (State-Based Replication)**
+  - [ ] Conectar sinal `peer_joined(id)` para instanciar nós de avatares remotos (`_remote_players: Dictionary`).
+  - [ ] Conectar sinal `peer_left(id)` e `peer_sleep(id)` para descarte ou desativação de avatares remotos.
+  - [ ] Processar sinal `state_received(owner, pos, rot, custom)` com interpolação de buffers temporais (LERP/SLERP) para suavizar movimentação de outros jogadores.
+  - [ ] Transmissão periódica de inputs/estados do jogador local via `submit_state(pos, rot, custom_id)` no canal `CH_STATE`.
+
+- [ ] **7.3 Predição no Cliente, Snapback e Reconciliação Autoritativa (Client-Side Prediction & Reconciliation)**
+  - [ ] Implementar fila de inputs pendentes com números de sequência (`sequence_id`) no `PlayerAvatar`.
+  - [ ] Conectar sinal `snapback_received(seq, pos, rot, reason, replay_inputs)` para correção de posição quando o servidor rejeitar um movimento.
+  - [ ] Replay instantâneo de inputs locais a partir do snapshot autoritativo do servidor após correção de divergência.
+
+- [ ] **7.4 Validação Espacial, Física Analítica e Autoridade no Servidor Headless**
+  - [ ] Integrar `QuanticNetServerAdapter` com `ServerWorldManager` para validação de passos contra o `HeightfieldSampler`.
+  - [ ] Implementar grade de particionamento espacial 2D em domínio puro (`SpatialHashGrid2D` com células de $32\text{m} \times 32\text{m}$) para consulta de obstáculos estáticos em $O(1)$.
+  - [ ] Implementar testes analíticos de colisão em microssegundos (sem nós de física/SceneTree):
+    - Círculo/Cilindro 2D para troncos de árvores, postes e colunas (distância euclidiana ao quadrado no plano $XZ$).
+    - Caixa Orientada 3D (*Oriented Bounding Box - OBB*) para casas, muralhas, cercas, pontes e rochas (*Closest Point on Box* via matriz transposta).
+  - [ ] Integrar validação de colisão de obstáculos estáticos no `ServerMovementValidator` em conjunto com limites de declive e velocidade máxima.
+  - [ ] Sistema de strikes (`DEFAULT_MAX_STRIKES`) e rejeição de peers com anomalias de posição.
+
+- [ ] **7.5 Telemetria de Rede, NetEm e Validação Multiplayer**
+  - [ ] Exibir métricas de RTT (Ping), jitter, packet loss e offsets de relógio no `DebugHUD` a partir do sinal `pong_received(rtt, offset)`.
+  - [ ] Teste de resiliência sob condições adversas de rede via emulador `--netem` (injeção de 10% packet loss, 150ms latência e 50ms jitter).
+  - [ ] Teste de validação multi-instância (Servidor Headless + 2 ou mais Clientes conectados simultaneamente).
+

@@ -6,12 +6,13 @@
 ## e colisão física de um chunk de terreno no mundo (Lineage II / Godotage II).
 ##
 ## @created 2026-08-19
-## @updated 2026-08-20
+## @updated 2026-08-21
 ##
 ## @author Leonardo S. Badaró
 extends Node3D
 
 const TerrainShader = preload("res://src/infrastructure/shaders/l2_terrain.gdshader")
+const OceanShader = preload("res://src/infrastructure/shaders/ocean_water.gdshader")
 const ChunkResourceAdapterClass = preload("res://src/adapters/chunk_resource_adapter.gd")
 const TerrainChunkAdapterClass = preload("res://src/adapters/terrain_chunk_adapter.gd")
 const RuntimeAssetCacheClass = preload("res://src/infrastructure/runtime_asset_cache.gd")
@@ -61,6 +62,7 @@ func build_chunk_node() -> void:
 		add_child(_visual_instance)
 		_setup_material_and_textures()
 		_setup_physics_collision()
+		_setup_local_water_volumes()
 
 
 func set_wireframe_enabled(enabled: bool) -> void:
@@ -153,11 +155,51 @@ func _setup_physics_collision() -> void:
 	_collision_shape = CollisionShape3D.new()
 	_collision_shape.name = "TerrainCollisionShape"
 
-	var trimesh_shape = mesh_node.mesh.create_trimesh_shape()
-	if trimesh_shape:
-		_collision_shape.shape = trimesh_shape
+	var resource_adapter = ChunkResourceAdapterClass.new(base_maps_path)
+	var meta = resource_adapter.load_chunk_meta_dict(chunk_name, true)
+	var has_holes = meta.get("has_holes", false)
+	var hf_bytes = resource_adapter.load_heightfield_bytes(chunk_name)
+
+	# Se não tiver buracos/cavernas e tiver heightfield binário, usa HeightMapShape3D (10x mais leve e instantâneo)
+	if not has_holes and not hf_bytes.is_empty():
+		var floats = hf_bytes.to_float32_array()
+		var grid_res = meta.get("grid_resolution", [256, 256])
+		var cols = int(grid_res[0])
+		var rows = int(grid_res[1])
+		var dims = meta.get("chunk_dimensions_meters", [2621.44, 2621.44])
+		var w = float(dims[0])
+		var d = float(dims[1])
+		var cell_x = w / float(max(1, cols - 1))
+		var cell_z = d / float(max(1, rows - 1))
+
+		var hm_shape = HeightMapShape3D.new()
+		hm_shape.map_width = cols
+		hm_shape.map_depth = rows
+		hm_shape.map_data = floats
+
+		_collision_shape.shape = hm_shape
+		_collision_shape.scale = Vector3(cell_x, 1.0, cell_z)
+	else:
+		# Fallback de alta fidelidade para cavernas e terrenos perfurados
+		var trimesh_shape = mesh_node.mesh.create_trimesh_shape()
+		if trimesh_shape:
+			_collision_shape.shape = trimesh_shape
+
+	if _collision_shape.shape:
 		_static_body.add_child(_collision_shape)
 		add_child(_static_body)
+
+
+var _water_volume_nodes: Array[MeshInstance3D] = []
+var _water_volumes_data: Dictionary = { }
+
+
+func get_water_volumes_data() -> Dictionary:
+	return _water_volumes_data
+
+
+func get_water_volume_nodes() -> Array[MeshInstance3D]:
+	return _water_volume_nodes
 
 
 func _find_first_mesh_instance(node: Node) -> MeshInstance3D:
@@ -168,3 +210,50 @@ func _find_first_mesh_instance(node: Node) -> MeshInstance3D:
 		if found:
 			return found
 	return null
+
+
+func _setup_local_water_volumes() -> void:
+	_water_volume_nodes.clear()
+	var resource_adapter = ChunkResourceAdapterClass.new(base_maps_path)
+	_water_volumes_data = resource_adapter.load_water_volumes_dict(chunk_name)
+	var volumes = _water_volumes_data.get("water_volumes", [])
+	if not (volumes is Array):
+		return
+
+	for v in volumes:
+		if not (v is Dictionary):
+			continue
+		if v.get("enabled", true) == false or v.get("hidden", false) == true:
+			continue
+
+		var surface_y = float(v.get("water_plane_height_m", v.get("surface_y_m", -320.0)))
+		var center_arr = v.get("center_m", [0.0, 0.0])
+		var size_arr = v.get("size_m", [2621.44, 2621.44])
+		var c_x = float(center_arr[0]) if center_arr.size() > 0 else 0.0
+		var c_z = float(center_arr[1]) if center_arr.size() > 1 else 0.0
+		var s_x = float(size_arr[0]) if size_arr.size() > 0 else 2621.44
+		var s_z = float(size_arr[1]) if size_arr.size() > 1 else 2621.44
+
+		# Suporte a expansão para horizonte de oceano
+		var ocean_ext = float(v.get("ocean_extension", 0.0))
+		s_x += ocean_ext
+		s_z += ocean_ext
+
+		var plane = MeshInstance3D.new()
+		var p_mesh = PlaneMesh.new()
+		p_mesh.size = Vector2(s_x, s_z)
+		p_mesh.subdivide_width = 2
+		p_mesh.subdivide_depth = 2
+		plane.mesh = p_mesh
+
+		var mat = ShaderMaterial.new()
+		mat.shader = OceanShader
+		plane.material_override = mat
+
+		# top_level garante posicionamento exato nas coordenadas globais do volume
+		plane.top_level = true
+		plane.position = Vector3(c_x, surface_y, c_z)
+		plane.name = "WaterVolume_" + str(v.get("name", "Local"))
+		add_child(plane)
+		_water_volume_nodes.append(plane)
+

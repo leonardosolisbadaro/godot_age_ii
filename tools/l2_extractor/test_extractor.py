@@ -255,6 +255,21 @@ class TestTerrainBuilder(unittest.TestCase):
         self.assertEqual(world_y.shape, (16, 16))
         self.assertAlmostEqual(float(world_y.min()), 0.0, places=2)
 
+    def test_neighbor_indices_calculation(self):
+        # Arrange: Chunk (16, 24)
+        from tools.l2_extractor.terrain_builder import get_neighbor_chunk_indices, find_adjacent_compiled_neighbors
+        # Act
+        neighbors = get_neighbor_chunk_indices(16, 24)
+
+        # Assert: Deve conter exatamente 8 vizinhos (4 cardeais + 4 diagonais)
+        self.assertEqual(len(neighbors), 8)
+        self.assertIn((16, 23), neighbors) # Norte
+        self.assertIn((16, 25), neighbors) # Sul
+        self.assertIn((15, 24), neighbors) # Oeste
+        self.assertIn((17, 24), neighbors) # Leste
+        self.assertIn((15, 23), neighbors) # Noroeste
+        self.assertIn((17, 25), neighbors) # Sudeste
+
 
 class TestStaticMeshBuilder(unittest.TestCase):
     """Testes unitários para o pipeline de extração de StaticMeshes (AAA)."""

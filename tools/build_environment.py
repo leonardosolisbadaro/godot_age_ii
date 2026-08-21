@@ -103,15 +103,18 @@ def process_map_environment(
         json.dump(client_recipe, f, indent=4)
     print(f"    -> Salvo receita ambiental do cliente em: {client_env_file.name}")
 
-    # 2. Salva water_volumes.json para o Servidor (Física / Detecção de Nado)
+    # 2. Salva water_volumes.json unificado na raiz do mapa e no server
+    root_water_file = chunk_root / "water_volumes.json"
     server_water_file = chunk_server_dir / "water_volumes.json"
-    server_water_data = {
+    water_data = {
         "chunk_name": clean_name,
         "water_volumes": env_data["water_volumes"],
     }
+    with open(root_water_file, "w", encoding="utf-8") as f:
+        json.dump(water_data, f, indent=4)
     with open(server_water_file, "w", encoding="utf-8") as f:
-        json.dump(server_water_data, f, indent=4)
-    print(f"    -> Salvo física de água do servidor em: {server_water_file.name}")
+        json.dump(water_data, f, indent=4)
+    print(f"    -> Salvo metadados de corpos d'água em: {root_water_file.name}")
 
     # 3. Resolve materiais referenciados pelos atores do mapa
     resolver = MaterialTreeResolver(env, textures_out_dir=textures_dir, config=config)

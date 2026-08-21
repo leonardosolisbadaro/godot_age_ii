@@ -6,7 +6,7 @@
 ## de artefatos de mapa, metadados, heightfields, atores estáticos e receitas de ambiente.
 ##
 ## @created 2026-08-19
-## @updated 2026-08-20
+## @updated 2026-08-21
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted
@@ -122,6 +122,94 @@ func load_environment_recipe_dict(chunk_name: String) -> Dictionary:
 	return _read_json_as_dict(path)
 
 
+func load_water_volumes_dict(chunk_name: String) -> Dictionary:
+	var root_path = "%s/%s/water_volumes.json" % [base_maps_path, chunk_name]
+	var server_path = "%s/%s/server/water_volumes.json" % [base_maps_path, chunk_name]
+	var target = root_path if _file_exists(root_path) else server_path
+	var data = _read_json_as_dict(target)
+
+	# Aplica overrides de water_volumes_fix.json se existir
+	var fix_root = "%s/%s/water_volumes_fix.json" % [base_maps_path, chunk_name]
+	var fix_server = "%s/%s/server/water_volumes_fix.json" % [base_maps_path, chunk_name]
+	var fix_client = "%s/%s/client/water_volumes_fix.json" % [base_maps_path, chunk_name]
+	var fix_path = ""
+	if _file_exists(fix_root):
+		fix_path = fix_root
+	elif _file_exists(fix_server):
+		fix_path = fix_server
+	elif _file_exists(fix_client):
+		fix_path = fix_client
+
+	if not fix_path.is_empty():
+		var fix_data = _read_json_as_dict(fix_path)
+		data = _apply_water_volumes_fix(data, fix_data)
+
+	return data
+
+
+func _apply_water_volumes_fix(water_data: Dictionary, fix_data: Dictionary) -> Dictionary:
+	var volumes = water_data.get("water_volumes", [])
+	if not (volumes is Array):
+		volumes = []
+
+	var fix_volumes = fix_data.get("water_volumes", [])
+	if not (fix_volumes is Array):
+		return water_data
+
+	var fix_map: Dictionary = { }
+	var new_volumes: Array = []
+
+	for fv in fix_volumes:
+		if fv is Dictionary:
+			var f_name = fv.get("name", "")
+			if not f_name.is_empty():
+				fix_map[f_name] = fv
+			else:
+				new_volumes.append(fv)
+
+	var matched_names: Dictionary = { }
+
+	for v in volumes:
+		if v is Dictionary:
+			var v_name = v.get("name", "")
+			if not v_name.is_empty() and fix_map.has(v_name):
+				var override = fix_map[v_name]
+				matched_names[v_name] = true
+				for k in override.keys():
+					v[k] = override[k]
+
+	# Adiciona volumes novos definidos no fix
+	for f_name in fix_map.keys():
+		if not matched_names.has(f_name):
+			volumes.append(fix_map[f_name])
+
+	for nv in new_volumes:
+		volumes.append(nv)
+
+	water_data["water_volumes"] = volumes
+	return water_data
+
+
+func save_water_volumes_fix(chunk_name: String, fix_data: Dictionary) -> bool:
+	var fix_path = "%s/%s/water_volumes_fix.json" % [base_maps_path, chunk_name]
+	var target = _resolve_write_path(fix_path)
+	if target.is_empty():
+		return false
+
+	var dir_path = target.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir_path):
+		DirAccess.make_dir_recursive_absolute(dir_path)
+
+	var file = FileAccess.open(target, FileAccess.WRITE)
+	if not file:
+		return false
+
+	var json_str = JSON.stringify(fix_data, "\t")
+	file.store_string(json_str)
+	file.close()
+	return true
+
+
 func load_static_actors_array(chunk_name: String, is_server: bool = false) -> Array:
 	var root_path = "%s/%s/chunk_static_actors.json" % [base_maps_path, chunk_name]
 	var subfolder = "server" if is_server else "client"
@@ -183,6 +271,15 @@ func _resolve_existing_path(path: String) -> String:
 	if FileAccess.file_exists(glob):
 		return glob
 	return ""
+
+
+func _resolve_write_path(path: String) -> String:
+	if path.is_empty():
+		return ""
+	var glob = ProjectSettings.globalize_path(path)
+	if not glob.is_empty():
+		return glob
+	return path
 
 
 func _read_json_as_dict(path: String) -> Dictionary:
