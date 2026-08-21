@@ -18,24 +18,14 @@ const EnvironmentZoneDataClass = preload("res://src/domain/environment_zone_data
 # ==============================================================================
 
 ## @const SHADOW_MAX_DISTANCE (float)
-## O que: Distância máxima de alcance das sombras em metros (400.0m).
-## Porque: Cobre o campo de visão imediato com fidelidade mantendo alta performance.
-const SHADOW_MAX_DISTANCE: float = 400.0
+## O que: Distância máxima de alcance das sombras em metros (250.0m).
+## Porque: Cobre o campo de visão imediato com nitidez extrema e altíssimo desempenho de GPU.
+const SHADOW_MAX_DISTANCE: float = 250.0
 
 ## @const SHADOW_SPLIT_1 (float)
-## O que: Ponto de divisão da primeira cascata de sombra PSSM (0.08 = 8%).
-## Porque: Máxima nitidez de sombras próximas ao avatar.
-const SHADOW_SPLIT_1: float = 0.08
-
-## @const SHADOW_SPLIT_2 (float)
-## O que: Ponto de divisão da segunda cascata de sombra PSSM (0.20 = 20%).
-## Porque: Transição suave para média distância.
-const SHADOW_SPLIT_2: float = 0.20
-
-## @const SHADOW_SPLIT_3 (float)
-## O que: Ponto de divisão da terceira cascata de sombra PSSM (0.50 = 50%).
-## Porque: Transição para sombras de longa distância.
-const SHADOW_SPLIT_3: float = 0.50
+## O que: Ponto de divisão da cascata de sombra PSSM (0.20 = 20%).
+## Porque: Transição equilibrada para sombras de média distância.
+const SHADOW_SPLIT_1: float = 0.20
 
 ## @const SHADOW_FADE_START (float)
 ## O que: Ponto relativo de atenuação do corte de sombras (0.85 = 85%).
@@ -65,13 +55,11 @@ func apply_to_directional_light(env_data: EnvironmentZoneDataClass, light_node: 
 	light_node.light_color = env_data.sun_color
 	light_node.light_energy = env_data.sun_energy
 
-	# Configura PSSM de 4 divisões paralelas para sombras contínuas sem queda de FPS
+	# Configura PSSM de 2 divisões paralelas otimizadas para sombras fluidas a 60 FPS
 	light_node.shadow_enabled = true
-	light_node.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	light_node.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	light_node.directional_shadow_max_distance = SHADOW_MAX_DISTANCE
 	light_node.directional_shadow_split_1 = SHADOW_SPLIT_1
-	light_node.directional_shadow_split_2 = SHADOW_SPLIT_2
-	light_node.directional_shadow_split_3 = SHADOW_SPLIT_3
 	light_node.directional_shadow_fade_start = SHADOW_FADE_START
 
 	# Orienta o nó de luz para apontar na direção do Sol

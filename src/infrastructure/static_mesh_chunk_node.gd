@@ -2,69 +2,58 @@
 ## @path res://src/infrastructure/static_mesh_chunk_node.gd
 ##
 ## @description
-## Nó 3D da camada de infraestrutura que carrega, agrupa e renderiza os atores
-## estáticos de um chunk em lote de alta performance via MultiMeshInstance3D.
+## Nó 3D da camada de infraestrutura que encapsula e exibe os atores estáticos
+## (MultiMeshInstance3D) e colisores reais (Jolt Physics) de um chunk no mundo.
 ##
-## @created 2026-08-19
+## @created 2026-08-20
 ## @updated 2026-08-21
 ##
 ## @author Leonardo S. Badaró
 extends Node3D
 
-const ChunkResourceAdapterClass = preload("res://src/adapters/chunk_resource_adapter.gd")
 const StaticMeshInstanceAdapterClass = preload("res://src/adapters/static_mesh_instance_adapter.gd")
 const StaticMeshInstanceDataClass = preload("res://src/domain/static_mesh_instance_data.gd")
+const ChunkResourceAdapterClass = preload("res://src/adapters/chunk_resource_adapter.gd")
 const RuntimeAssetCacheClass = preload("res://src/infrastructure/runtime_asset_cache.gd")
 
 # ==============================================================================
-# CONSTANTES SEMÂNTICAS DE STATIC MESHES
+# CONSTANTES SEMÂNTICAS
 # ==============================================================================
 
-## @const AABB_RAY_GROWTH_MARGIN (float)
-## O que: Margem de expansão em metros aplicada ao AABB para teste de raio do mouse (2.0m).
-## Porque: Facilita a seleção e inspeção de objetos finos como postes e cercas.
-const AABB_RAY_GROWTH_MARGIN: float = 2.0
+## @const COMMON_TEXTURE_PACKAGES (Array[String])
+## O que: Lista de pacotes de textura comuns do Lineage II para busca de fallback.
+## Porque: Facilita a resolução de texturas sem caminho explícito nos metadados.
+const COMMON_TEXTURE_PACKAGES: Array[String] = [
+	"TI_T",
+	"Castle_T",
+	"Town_T",
+	"Village_T",
+	"Dungeon_T",
+	"Deco_T",
+	"Plants_T",
+	"Tree_T",
+	"Water_T",
+	"Effect_T",
+	"T_17_25",
+	"T_16_24",
+	"T_16_25",
+	"T_17_24",
+]
 
 ## @const DEFAULT_ALPHA_SCISSOR_THRESHOLD (float)
-## O que: Limiar padrão de corte alfa para materiais de folhagem e vegetação (0.35).
-## Porque: Proporciona folhagens nítidas sem bordas escuras.
-const DEFAULT_ALPHA_SCISSOR_THRESHOLD: float = 0.35
+## O que: Limiar de corte alfa padrão para folhagens e tecidos (0.5).
+## Porque: Separação nítida de transparência binária sem artefatos de borda.
+const DEFAULT_ALPHA_SCISSOR_THRESHOLD: float = 0.5
 
 ## @const FOLIAGE_ROUGHNESS (float)
-## O que: Rugosidade padrão para materiais de vegetação (0.85).
-## Porque: Reduz reflexos especulares plásticos em folhas e galhos.
+## O que: Rugosidade padrão de materiais de folhagens e vegetação (0.85).
+## Porque: Dispersão natural de luz solar na copa de árvores.
 const FOLIAGE_ROUGHNESS: float = 0.85
 
-## @const COMMON_TEXTURE_PACKAGES (Array[String])
-## O que: Lista de pacotes de textura frequentemente referenciados em cenários de vilas e campos.
-## Porque: Permite busca rápida por correspondência de nome.
-const COMMON_TEXTURE_PACKAGES: Array[String] = [
-	"si_v_t",
-	"speaking1f_t",
-	"speaking_tree_t",
-	"field_deco_t",
-	"field_deco_artifact_t",
-	"speakingfighter_t",
-	"interior_b_ch_t",
-	"statues_t",
-	"sp_lighthouse",
-	"entrance_t",
-	"deco01",
-	"gludio_port_t",
-	"interior_b_t",
-	"speaking_magic_t",
-	"v_obj_t",
-	"door_set_t",
-	"fx_e_t",
-	"manor_system_object_t",
-	"speakingfighterbridge_t",
-	"world_bridge_t",
-	"world_bulletinboard_t",
-	"gl_cv_t",
-	"talking_village_t",
-	"giran_village_t",
-	"aden_village_t",
-]
+## @const AABB_RAY_GROWTH_MARGIN (float)
+## O que: Margem de expansão do AABB para picking de raios do mouse (0.2m).
+## Porque: Garante facilidade de clique no inspetor de materiais.
+const AABB_RAY_GROWTH_MARGIN: float = 0.2
 
 # ==============================================================================
 # PROPRIEDADES DO NÓ
@@ -73,10 +62,10 @@ const COMMON_TEXTURE_PACKAGES: Array[String] = [
 var chunk_name: String = ""
 var base_maps_path: String = "res://assets/maps"
 
-var _multimesh_nodes: Array = []
+var _multimesh_nodes: Array[MultiMeshInstance3D] = []
 var _material_recipes: Dictionary = { }
 var _material_cache: Dictionary = { }
-var _loaded_meshes: Array = []
+var _loaded_meshes: Array[Mesh] = []
 var _parsed_instances: Array = []
 
 
@@ -90,9 +79,13 @@ func _ready() -> void:
 		build_static_meshes()
 
 
+var _collision_rules: Dictionary = { }
+
+
 func build_static_meshes() -> void:
 	var resource_adapter = ChunkResourceAdapterClass.new(base_maps_path)
 	_material_recipes = resource_adapter.load_material_recipes_dict(chunk_name)
+	_collision_rules = resource_adapter.load_collision_rules_dict()
 
 	var actors_raw = resource_adapter.load_static_actors_array(chunk_name, false)
 	if actors_raw.is_empty():
@@ -111,58 +104,127 @@ func build_static_meshes() -> void:
 			_apply_materials_to_mesh(mesh)
 			var mm_node = inst_adapter.create_multimesh_instance(mesh, instances)
 			if mm_node:
+				# Otimização de Sombras e Culling em Folhagens/Vegetação
+				if _is_foliage_or_small_vegetation(mesh_path, instances):
+					mm_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+					mm_node.visibility_range_end = 400.0
+					mm_node.visibility_range_end_margin = 50.0
+					mm_node.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+
 				_multimesh_nodes.append(mm_node)
 				add_child(mm_node)
 
-	_setup_static_mesh_collisions()
+	_setup_static_mesh_collisions(groups)
 
 
-func _setup_static_mesh_collisions() -> void:
-	if _parsed_instances.is_empty():
+func _classify_collision_type(mesh_path: String, first_inst: StaticMeshInstanceDataClass) -> Dictionary:
+	var p_clean = mesh_path.to_lower()
+	var m_name = first_inst.mesh_name.to_lower() if first_inst else ""
+	var a_name = first_inst.actor_name.to_lower() if first_inst else ""
+
+	# Nível 1: Custom Overrides no JSON
+	var overrides = _collision_rules.get("custom_overrides", { })
+	if overrides is Dictionary:
+		for k in overrides.keys():
+			var k_clean = k.to_lower()
+			if k_clean in p_clean or k_clean == m_name or k_clean in a_name:
+				var ov = overrides[k]
+				if ov is Dictionary:
+					return ov
+
+	# Nível 2: Categorias no JSON
+	var categories = _collision_rules.get("categories", { })
+	if categories is Dictionary:
+		var pass_list = categories.get("pass_through", [])
+		for kw in pass_list:
+			if kw in p_clean or kw == m_name:
+				return { "type": "pass_through" }
+
+		var tree_list = categories.get("tree_trunk_only", [])
+		for kw in tree_list:
+			if kw in p_clean or kw in m_name:
+				return { "type": "tree_trunk", "surface_index": 0 }
+
+		var concave_list = categories.get("concave_architecture", [])
+		for kw in concave_list:
+			if kw in p_clean or kw in m_name:
+				return { "type": "concave" }
+
+		var convex_list = categories.get("convex_props", [])
+		for kw in convex_list:
+			if kw in p_clean or kw in m_name:
+				return { "type": "convex" }
+
+	# Nível 3: Fallbacks Heurísticos Inteligentes
+	for kw in ["grass", "flower", "fern", "ivy", "bush", "shrub", "flora", "weed", "deco_plant"]:
+		if kw in p_clean or kw in m_name:
+			return { "type": "pass_through" }
+
+	for kw in ["tree", "branch", "trunk", "speaking_tree", "ti_tree", "si_tree"]:
+		if kw in p_clean or kw in m_name:
+			return { "type": "tree_trunk", "surface_index": 0 }
+
+	if first_inst:
+		var sz = first_inst.base_aabb.size * first_inst.scale
+		if sz.x > 3.0 or sz.z > 3.0 or sz.y > 2.5:
+			return { "type": "concave" }
+
+	return { "type": "convex" }
+
+
+func _is_foliage_or_small_vegetation(mesh_path: String, instances: Array) -> bool:
+	var first_inst: StaticMeshInstanceDataClass = instances[0] if not instances.is_empty() and instances[0] is StaticMeshInstanceDataClass else null
+	var classif = _classify_collision_type(mesh_path, first_inst)
+	return classif.get("type", "") == "pass_through"
+
+
+func _setup_static_mesh_collisions(groups: Dictionary) -> void:
+	if groups.is_empty():
 		return
 
 	var body = StaticBody3D.new()
 	body.name = "StaticMeshesCollisionBody"
 
-	for inst in _parsed_instances:
-		if not (inst is StaticMeshInstanceDataClass):
+	for mesh_path in groups.keys():
+		var instances = groups[mesh_path]
+		if instances.is_empty():
 			continue
 
-		var m_name = inst.mesh_name.to_lower()
-		var a_name = inst.actor_name.to_lower()
-		var p_name = inst.mesh_resource_path.to_lower()
+		var first_inst: StaticMeshInstanceDataClass = instances[0] if instances[0] is StaticMeshInstanceDataClass else null
+		var classif = _classify_collision_type(mesh_path, first_inst)
+		var c_type = classif.get("type", "convex")
 
-		# Identifica se é um objeto obstrutivo sólido (árvores, muros, construções, rochas, etc.)
-		var is_solid = false
-		for kw in [
-			"tree", "wall", "house", "building", "fence", "rock", "stone",
-			"pillar", "column", "statue", "gate", "door", "bridge", "tower",
-			"ruin", "stair", "temple", "fort", "castle", "monument", "box", "crate"
-		]:
-			if kw in m_name or kw in a_name or kw in p_name:
-				is_solid = true
-				break
-
-		if not is_solid:
+		# 1. Pass-Through (Grama, Flores, etc.)
+		if c_type == "pass_through":
 			continue
 
-		var shape_node = CollisionShape3D.new()
-		var shape = BoxShape3D.new()
+		# 2. Carrega Malha 3D
+		var mesh = _load_mesh_resource(mesh_path)
+		if not mesh:
+			continue
 
-		# Dimensões da caixa de colisão baseada no base_aabb e escala
-		var w_size = inst.base_aabb.size * inst.scale
-		var sx = maxf(0.5, absf(w_size.x))
-		var sy = maxf(0.5, absf(w_size.y))
-		var sz = maxf(0.5, absf(w_size.z))
-		shape.size = Vector3(sx, sy, sz)
+		# 3. Determina o Shape de Colisão
+		var shape: Shape3D = null
+		if c_type == "tree_trunk" or c_type == "tree_trunk_surface":
+			var surf_idx = int(classif.get("surface_index", 0))
+			shape = RuntimeAssetCacheClass.get_or_create_trunk_convex_shape(mesh_path, mesh, surf_idx)
+		elif c_type == "concave":
+			shape = RuntimeAssetCacheClass.get_or_create_trimesh_shape(mesh_path, mesh)
+		else:
+			shape = RuntimeAssetCacheClass.get_or_create_convex_shape(mesh_path, mesh)
 
-		shape_node.shape = shape
-		var aabb_center = inst.base_aabb.position + (inst.base_aabb.size * 0.5)
-		var local_offset = aabb_center * inst.scale
+		if not shape:
+			continue
 
-		var b = Basis.from_euler(inst.rotation_radians)
-		shape_node.transform = Transform3D(b, inst.position + b * local_offset)
-		body.add_child(shape_node)
+		# 4. Instancia CollisionShape3D com o Transform3D exato de cada ator
+		for inst in instances:
+			if not (inst is StaticMeshInstanceDataClass):
+				continue
+
+			var shape_node = CollisionShape3D.new()
+			shape_node.shape = shape
+			shape_node.transform = inst.get_transform()
+			body.add_child(shape_node)
 
 	if body.get_child_count() > 0:
 		add_child(body)

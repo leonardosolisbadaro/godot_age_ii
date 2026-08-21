@@ -24,5 +24,11 @@ func test_static_mesh_chunk_node_instantiation() -> void:
 	assert_eq(node.chunk_name, "16_24")
 	assert_gt(node.get_multimesh_count(), 0, "Deve conter instâncias de MultiMesh agrupadas")
 
+	# Valida existência de StaticMeshesCollisionBody
+	var col_body = node.get_node_or_null("StaticMeshesCollisionBody")
+	assert_not_null(col_body, "Deve instanciar StaticMeshesCollisionBody para física")
+	if col_body:
+		assert_gt(col_body.get_child_count(), 0, "Deve conter formas de colisão geradas")
+
 	# Cleanup
 	node.free()

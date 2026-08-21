@@ -99,7 +99,7 @@ func update_telemetry(
 	] + "Pos: (%.1f, %.1f, %.1f)m\n" % [player_pos.x, player_pos.y, player_pos.z] + "Chunk Ativo: %s | Altura Solo: %.1fm\n" % [
 		active_chunk if not active_chunk.is_empty() else "Nenhum",
 		altitude_found,
-	] + "[F2] Wireframe | [F3] Ocultar HUD"
+	] + "[F2] HUD | [F3] Wireframe | [F5] Colisão | [F10] Água | [F12] Sombras"
 
 
 func update_inspector_info(data: Dictionary) -> void:

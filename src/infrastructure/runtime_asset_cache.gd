@@ -2,17 +2,20 @@
 ## @path res://src/infrastructure/runtime_asset_cache.gd
 ##
 ## @description
-## Cache centralizado em memória para recursos de textura 2D e malhas 3D
-## compartilhados entre múltiplos chunks e atores estáticos no mundo.
+## Cache centralizado em memória para recursos de textura 2D, malhas 3D e
+## formas de colisão geométricas compartilhados entre múltiplos chunks no mundo.
 ##
 ## @created 2026-08-20
-## @updated 2026-08-20
+## @updated 2026-08-21
 ##
 ## @author Leonardo S. Badaró
 extends RefCounted
 
 static var _texture_cache: Dictionary = { }
 static var _mesh_cache: Dictionary = { }
+static var _convex_shape_cache: Dictionary = { }
+static var _trimesh_shape_cache: Dictionary = { }
+static var _trunk_shape_cache: Dictionary = { }
 static var _mutex: Mutex = Mutex.new()
 
 
@@ -89,6 +92,77 @@ static func get_or_load_mesh(mesh_path: String) -> Mesh:
 	return mesh
 
 
+static func get_or_create_convex_shape(mesh_path: String, mesh: Mesh) -> Shape3D:
+	if not mesh:
+		return null
+
+	var key = mesh_path if not mesh_path.is_empty() else str(mesh.get_instance_id())
+	_mutex.lock()
+	if _convex_shape_cache.has(key):
+		var shape = _convex_shape_cache[key]
+		_mutex.unlock()
+		return shape
+	_mutex.unlock()
+
+	var new_shape = mesh.create_convex_shape()
+	if new_shape:
+		_mutex.lock()
+		_convex_shape_cache[key] = new_shape
+		_mutex.unlock()
+	return new_shape
+
+
+static func get_or_create_trimesh_shape(mesh_path: String, mesh: Mesh) -> Shape3D:
+	if not mesh:
+		return null
+
+	var key = mesh_path if not mesh_path.is_empty() else str(mesh.get_instance_id())
+	_mutex.lock()
+	if _trimesh_shape_cache.has(key):
+		var shape = _trimesh_shape_cache[key]
+		_mutex.unlock()
+		return shape
+	_mutex.unlock()
+
+	var new_shape = mesh.create_trimesh_shape()
+	if new_shape:
+		_mutex.lock()
+		_trimesh_shape_cache[key] = new_shape
+		_mutex.unlock()
+	return new_shape
+
+
+static func get_or_create_trunk_convex_shape(mesh_path: String, mesh: Mesh, trunk_surface_index: int = 0) -> Shape3D:
+	if not mesh:
+		return null
+
+	var key = "%s_trunk_%d" % [mesh_path if not mesh_path.is_empty() else str(mesh.get_instance_id()), trunk_surface_index]
+	_mutex.lock()
+	if _trunk_shape_cache.has(key):
+		var shape = _trunk_shape_cache[key]
+		_mutex.unlock()
+		return shape
+	_mutex.unlock()
+
+	var new_shape: Shape3D = null
+	if mesh is ArrayMesh and mesh.get_surface_count() > trunk_surface_index:
+		var arrays = mesh.surface_get_arrays(trunk_surface_index)
+		if not arrays.is_empty():
+			var trunk_mesh = ArrayMesh.new()
+			trunk_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			new_shape = trunk_mesh.create_convex_shape()
+
+	if not new_shape:
+		new_shape = mesh.create_convex_shape()
+
+	if new_shape:
+		_mutex.lock()
+		_trunk_shape_cache[key] = new_shape
+		_mutex.unlock()
+
+	return new_shape
+
+
 static func _extract_mesh_from_node(node: Node) -> Mesh:
 	if not node:
 		return null
@@ -105,6 +179,9 @@ static func clear() -> void:
 	_mutex.lock()
 	_texture_cache.clear()
 	_mesh_cache.clear()
+	_convex_shape_cache.clear()
+	_trimesh_shape_cache.clear()
+	_trunk_shape_cache.clear()
 	_mutex.unlock()
 
 

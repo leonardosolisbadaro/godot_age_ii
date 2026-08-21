@@ -19,14 +19,17 @@ func execute(
 	to_pos: Vector3,
 	chunks_data: Dictionary,
 	samplers: Dictionary,
+	obstacle_indices: Dictionary = { },
 	delta_time: float = ServerMovementValidatorClass.DEFAULT_DELTA_TIME,
 	max_speed: float = ServerMovementValidatorClass.DEFAULT_MAX_SPEED,
 	max_slope_ratio: float = ServerMovementValidatorClass.DEFAULT_MAX_SLOPE_RATIO,
+	entity_radius: float = ServerMovementValidatorClass.DEFAULT_ENTITY_RADIUS,
 ) -> Dictionary:
 	var validator = ServerMovementValidatorClass.new()
 
-	# Identifica o sampler correspondente à posição de destino
+	# Identifica o sampler e índice de obstáculos do chunk ativo de destino
 	var active_sampler = null
+	var active_obstacle_index = null
 	for c_name in chunks_data.keys():
 		var chunk = chunks_data[c_name]
 		if (
@@ -34,6 +37,7 @@ func execute(
 			and chunk.contains_world_point(to_pos.x, to_pos.z)
 		):
 			active_sampler = samplers.get(c_name, null)
+			active_obstacle_index = obstacle_indices.get(c_name, null)
 			break
 
 	return validator.validate_step(
@@ -41,7 +45,10 @@ func execute(
 		to_pos,
 		active_sampler,
 		null,
+		active_obstacle_index,
 		delta_time,
 		max_speed,
 		max_slope_ratio,
+		ServerMovementValidatorClass.DEFAULT_TOLERANCE_FACTOR,
+		entity_radius,
 	)

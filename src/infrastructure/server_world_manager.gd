@@ -22,18 +22,23 @@ const SampleWorldAltitudeUseCaseClass = preload(
 const ValidatePlayerMovementUseCaseClass = preload(
 	"res://src/use_cases/validate_player_movement_use_case.gd"
 )
+const LoadServerStaticObstaclesUseCaseClass = preload(
+	"res://src/use_cases/load_server_static_obstacles_use_case.gd"
+)
 const ServerMovementValidatorClass = preload("res://src/domain/server_movement_validator.gd")
 
 var base_maps_path: String = "res://assets/maps"
 
 var _chunks_data: Dictionary = { } # { "16_24": TerrainChunkData, ... }
 var _samplers: Dictionary = { } # { "16_24": HeightfieldSampler, ... }
+var _obstacle_indices: Dictionary = { } # { "16_24": SpatialObstacleIndex, ... }
 
 var _resource_adapter: RefCounted
 var _meta_use_case: RefCounted
 var _hf_use_case: RefCounted
 var _altitude_use_case: RefCounted
 var _movement_use_case: RefCounted
+var _obstacles_use_case: RefCounted
 
 
 func _init(p_base_path: String = "res://assets/maps") -> void:
@@ -43,6 +48,7 @@ func _init(p_base_path: String = "res://assets/maps") -> void:
 	_hf_use_case = LoadServerHeightfieldUseCaseClass.new()
 	_altitude_use_case = SampleWorldAltitudeUseCaseClass.new()
 	_movement_use_case = ValidatePlayerMovementUseCaseClass.new()
+	_obstacles_use_case = LoadServerStaticObstaclesUseCaseClass.new()
 
 
 func load_server_chunk(chunk_name: String) -> bool:
@@ -54,8 +60,12 @@ func load_server_chunk(chunk_name: String) -> bool:
 	if not sampler:
 		return false
 
+	var obstacle_index = _obstacles_use_case.execute(chunk_name, base_maps_path)
+
 	_chunks_data[chunk_name] = chunk_data
 	_samplers[chunk_name] = sampler
+	if obstacle_index:
+		_obstacle_indices[chunk_name] = obstacle_index
 	return true
 
 
@@ -77,15 +87,30 @@ func validate_movement(
 	to_pos: Vector3,
 	delta_time: float = ServerMovementValidatorClass.DEFAULT_DELTA_TIME,
 	max_speed: float = ServerMovementValidatorClass.DEFAULT_MAX_SPEED,
+	entity_radius: float = ServerMovementValidatorClass.DEFAULT_ENTITY_RADIUS,
 ) -> Dictionary:
 	return _movement_use_case.execute(
 		from_pos,
 		to_pos,
 		_chunks_data,
 		_samplers,
+		_obstacle_indices,
 		delta_time,
 		max_speed,
+		ServerMovementValidatorClass.DEFAULT_MAX_SLOPE_RATIO,
+		entity_radius,
 	)
+
+
+func get_obstacle_index_at(world_x: float, world_z: float) -> RefCounted:
+	for c_name in _chunks_data.keys():
+		var chunk = _chunks_data[c_name]
+		if (
+			chunk and chunk.has_method("contains_world_point")
+			and chunk.contains_world_point(world_x, world_z)
+		):
+			return _obstacle_indices.get(c_name, null)
+	return null
 
 
 func get_loaded_chunks() -> Array:

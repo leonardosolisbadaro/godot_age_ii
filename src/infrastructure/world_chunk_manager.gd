@@ -147,6 +147,7 @@ func _build_and_attach_chunk_nodes(chunk_name: String) -> void:
 	# Instancia Terreno Visual
 	var terrain_node = L2TerrainChunkNodeClass.new(chunk_name, base_maps_path)
 	terrain_node.name = "Terrain_%s" % chunk_name
+	terrain_node.build_chunk_node()
 	var chunk_data = _known_chunks.get(chunk_name)
 	if chunk_data:
 		terrain_node.position = chunk_data.world_origin
@@ -156,6 +157,7 @@ func _build_and_attach_chunk_nodes(chunk_name: String) -> void:
 	# Instancia Atores Estáticos (MultiMesh)
 	var mesh_node = StaticMeshChunkNodeClass.new(chunk_name, base_maps_path)
 	mesh_node.name = "StaticMeshes_%s" % chunk_name
+	mesh_node.build_static_meshes()
 	add_child(mesh_node)
 	_active_mesh_nodes[chunk_name] = mesh_node
 

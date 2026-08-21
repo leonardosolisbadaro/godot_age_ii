@@ -50,19 +50,18 @@ const MAPS_BASE_PATH: String = "res://assets/maps"
 ## @const FALLBACK_ENV_CHUNK (String)
 ## O que: Chunk de referência padrão para parâmetros atmosféricos caso nenhum seja detectado ("16_24").
 ## Porque: Região central de Talking Island Village.
-const FALLBACK_ENV_CHUNK: String = "16_24"
+const FALLBACK_ENV_CHUNK: String = "17_25"
 
 ## @const SPAWN_ON_MAP (String)
 ## O que: Identificador do chunk para cálculo dinâmico do ponto de spawn ("16_24").
 ## Porque: Caso preenchido e não nulo, o spawn será posicionado no centro do chunk e na cota do solo.
-const SPAWN_ON_MAP: String = "16_24"
 # const SPAWN_ON_MAP: String = ""
+const SPAWN_ON_MAP: String = "17_25"
 
 ## @const SPAWN_POS (Vector3)
 ## O que: Ponto inicial de spawn de fallback caso SPAWN_ON_MAP seja vazio ou nulo.
 ## Porque: Ponto de referência em Talking Island (X=-3779.0m, Y=-286.0m, Z=16976.0m).
 const SPAWN_POS: Vector3 = Vector3(-3779.0, -286.0, 16976.0)
-# const SPAWN_POS: Vector3 = Vector3(-6040.0, -286.0, 20962.0)
 
 ## @const DEFAULT_STREAMING_RADIUS_METERS (float)
 ## O que: Raio de visão para streaming de chunks em metros (1500.0m).
@@ -144,7 +143,10 @@ func _start_client() -> void:
 	print("=======================================================\n")
 
 	# 1. Configura Gerenciador de Streaming do Mundo
-	_world_chunk_manager = WorldChunkManagerClass.new(MAPS_BASE_PATH, DEFAULT_STREAMING_RADIUS_METERS)
+	_world_chunk_manager = WorldChunkManagerClass.new(
+		MAPS_BASE_PATH,
+		DEFAULT_STREAMING_RADIUS_METERS,
+	)
 	_world_chunk_manager.name = "WorldChunkManager"
 	add_child(_world_chunk_manager)
 
@@ -178,31 +180,27 @@ func _start_client() -> void:
 
 
 func _calculate_spawn_position() -> Vector3:
-	var target_chunk = SPAWN_ON_MAP if (not SPAWN_ON_MAP.is_empty() and SPAWN_ON_MAP != "null") else FALLBACK_ENV_CHUNK
-	var meta = _resource_adapter.load_chunk_meta_dict(target_chunk, true)
-	if not meta.is_empty() and meta.has("world_origin_meters"):
-		var orig = meta.get("world_origin_meters", [0.0, 0.0, 0.0])
-		var sx = float(orig[0])
-		var sz = float(orig[2])
-		var sy = float(orig[1])
+	if not SPAWN_ON_MAP.is_empty() and SPAWN_ON_MAP != "null":
+		var meta = _resource_adapter.load_chunk_meta_dict(SPAWN_ON_MAP, true)
+		if not meta.is_empty() and meta.has("world_origin_meters"):
+			var orig = meta.get("world_origin_meters", [0.0, 0.0, 0.0])
+			var sx = float(orig[0])
+			var sz = float(orig[2])
+			var sy = float(orig[1])
 
-		# Amostragem matemática via HeightfieldSampler pura no cliente (zero dependência de rede/servidor)
-		var hf_bytes = _resource_adapter.load_heightfield_bytes(target_chunk)
-		if not hf_bytes.is_empty():
-			var chunk_data = TerrainChunkDataClass.new()
-			chunk_data.from_meta_dictionary(meta)
-			var sampler = HeightfieldSamplerClass.new(
-				hf_bytes,
-				chunk_data.grid_width,
-				chunk_data.grid_depth,
-				chunk_data.cell_size_x,
-				chunk_data.cell_size_z,
-				chunk_data.world_origin,
-			)
-			sy = sampler.get_height_at(sx, sz)
-			return Vector3(sx, sy + 2.0, sz)
-		elif not SPAWN_ON_MAP.is_empty() and SPAWN_ON_MAP != "null":
-			return Vector3(sx, sy + 2.0, sz)
+			# Amostragem matemática via HeightfieldSampler pura no cliente (zero dependência de rede/servidor)
+			var hf_bytes = _resource_adapter.load_heightfield_bytes(SPAWN_ON_MAP)
+			if not hf_bytes.is_empty():
+				var chunk_data = TerrainChunkDataClass.new()
+				chunk_data.from_meta_dictionary(meta)
+				var sampler = HeightfieldSamplerClass.from_chunk_data_and_bytes(
+					chunk_data,
+					hf_bytes,
+				)
+				if sampler:
+					sy = sampler.get_height_at(sx, sz)
+				return Vector3(sx, sy + 1.0, sz)
+			return Vector3(sx, sy + 1.0, sz)
 
 	return SPAWN_POS
 
@@ -234,7 +232,10 @@ func _process(_delta: float) -> void:
 		return
 
 	# Atualiza streaming assíncrono em background se o jogador se moveu além do limiar
-	if _world_chunk_manager and _local_player.position.distance_squared_to(_last_stream_pos) > STREAMING_UPDATE_THRESHOLD_SQ:
+	if (
+		_world_chunk_manager
+		and _local_player.position.distance_squared_to(_last_stream_pos) > STREAMING_UPDATE_THRESHOLD_SQ
+	):
 		_last_stream_pos = _local_player.position
 		_world_chunk_manager.update_streaming(_local_player.position, true)
 
@@ -267,8 +268,8 @@ func _process(_delta: float) -> void:
 func _get_chunk_indices_at(world_x: float, world_z: float) -> Vector2i:
 	var chunk_w = 2621.44
 	var chunk_d = 2621.44
-	var cx = int(floor((world_x + (20 * chunk_w)) / chunk_w))
-	var cy = int(floor((world_z + (18 * chunk_d)) / chunk_d))
+	var cx = 19 + int(floor((world_x + (chunk_w * 0.5)) / chunk_w))
+	var cy = 17 + int(floor((world_z + (chunk_d * 0.5)) / chunk_d))
 	return Vector2i(cx, cy)
 
 
@@ -277,22 +278,61 @@ func _input(event: InputEvent) -> void:
 		return
 
 	if event is InputEventKey and event.pressed and not event.echo:
-		# Tecla F2: Alterna Modo Wireframe Ultraleve Direto no Shader (60 FPS cravados)
+		# Tecla F2: Alterna HUD
 		if event.keycode == KEY_F2 or event.physical_keycode == KEY_F2:
+			if _debug_hud:
+				_debug_hud.toggle_visibility()
+				print("[DEBUG] HUD Visibilidade: ", "LIGADA" if _debug_hud.visible else "OCULTA")
+
+		# Tecla F3: Alterna Modo Wireframe Ultraleve Direto no Shader (60 FPS cravados)
+		elif event.keycode == KEY_F3 or event.physical_keycode == KEY_F3:
 			_wireframe_active = not _wireframe_active
 			if _world_chunk_manager:
 				_world_chunk_manager.set_wireframe_enabled(_wireframe_active)
 			print("[DEBUG] Wireframe (60 FPS): ", "ATIVADO" if _wireframe_active else "DESATIVADO")
 
-		# Tecla F3: Alterna HUD
-		elif event.keycode == KEY_F3 or event.physical_keycode == KEY_F3:
-			if _debug_hud:
-				_debug_hud.toggle_visibility()
-				print("[DEBUG] HUD Visibilidade: ", "LIGADA" if _debug_hud.visible else "OCULTA")
-
-		# Tecla F4: Salva o estado atual de corpos d'água na memória para water_volumes_fix.json
-		elif event.keycode == KEY_F4 or event.physical_keycode == KEY_F4:
+		# Tecla F10: Salva o estado atual de corpos d'água na memória para water_volumes_fix.json
+		elif event.keycode == KEY_F10 or event.physical_keycode == KEY_F10:
 			_save_current_chunk_water_fix()
+
+		# Tecla F5: Alterna Visualização de Colisores de Física (Debug Collision)
+		elif event.keycode == KEY_F5 or event.physical_keycode == KEY_F5:
+			_toggle_debug_collisions()
+
+		# Tecla F12: Alterna Sombras da Luz Solar
+		elif event.keycode == KEY_F12 or event.physical_keycode == KEY_F12:
+			if _directional_light:
+				_directional_light.shadow_enabled = not _directional_light.shadow_enabled
+				print(
+					"[DEBUG] Sombras Direcionais: ",
+					"ATIVADAS" if _directional_light.shadow_enabled else "DESATIVADAS",
+				)
+
+
+func _toggle_debug_collisions() -> void:
+	var tree = get_tree()
+	if not tree:
+		return
+
+	tree.debug_collisions_hint = not tree.debug_collisions_hint
+	_refresh_collision_shapes_recursive(tree.root)
+	print(
+		"[DEBUG] Visualização de Colisores de Física: ",
+		"LIGADA" if tree.debug_collisions_hint else "DESLIGADA",
+	)
+
+
+func _refresh_collision_shapes_recursive(node: Node) -> void:
+	if not node:
+		return
+
+	if node is CollisionShape3D:
+		var s = node.shape
+		node.shape = null
+		node.shape = s
+
+	for child in node.get_children():
+		_refresh_collision_shapes_recursive(child)
 
 
 func _save_current_chunk_water_fix() -> void:
@@ -314,9 +354,14 @@ func _save_current_chunk_water_fix() -> void:
 
 	var success = _world_chunk_manager.save_water_volumes_fix_for_chunk(current_chunk)
 	if success:
-		print("[DEBUG] [F4] water_volumes_fix.json salvo com sucesso para o chunk '%s'." % current_chunk)
+		print(
+			"[DEBUG] [F4] water_volumes_fix.json salvo com sucesso para o chunk '%s'."
+			% current_chunk
+		)
 	else:
-		print("[DEBUG] [F4] Falha ao salvar water_volumes_fix.json para o chunk '%s'." % current_chunk)
+		print(
+			"[DEBUG] [F4] Falha ao salvar water_volumes_fix.json para o chunk '%s'." % current_chunk
+		)
 
 
 func _notification(what: int) -> void:

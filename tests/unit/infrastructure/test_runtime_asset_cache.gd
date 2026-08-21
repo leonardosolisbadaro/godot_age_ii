@@ -57,3 +57,41 @@ func test_clear_cache() -> void:
 	# Assert
 	assert_eq(RuntimeAssetCacheClass.get_texture_count(), 0)
 	assert_eq(RuntimeAssetCacheClass.get_mesh_count(), 0)
+
+
+func test_shape_caching_and_reuse() -> void:
+	# Arrange
+	var box_mesh = BoxMesh.new()
+	var mesh_key = "test://dummy_box.glb"
+
+	# Act
+	var shape1 = RuntimeAssetCacheClass.get_or_create_convex_shape(mesh_key, box_mesh)
+	var shape2 = RuntimeAssetCacheClass.get_or_create_convex_shape(mesh_key, box_mesh)
+	var trimesh1 = RuntimeAssetCacheClass.get_or_create_trimesh_shape(mesh_key, box_mesh)
+	var trimesh2 = RuntimeAssetCacheClass.get_or_create_trimesh_shape(mesh_key, box_mesh)
+
+	# Assert
+	assert_not_null(shape1, "Convex shape deve ser gerado")
+	assert_eq(shape1, shape2, "Segunda chamada de convex shape deve retornar mesma instância do cache")
+	assert_not_null(trimesh1, "Trimesh shape deve ser gerado")
+	assert_eq(trimesh1, trimesh2, "Segunda chamada de trimesh shape deve retornar mesma instância do cache")
+
+	# Cleanup
+	RuntimeAssetCacheClass.clear()
+
+
+func test_trunk_shape_caching() -> void:
+	# Arrange
+	var box_mesh = BoxMesh.new()
+	var mesh_key = "test://dummy_tree.glb"
+
+	# Act
+	var trunk_shape1 = RuntimeAssetCacheClass.get_or_create_trunk_convex_shape(mesh_key, box_mesh, 0)
+	var trunk_shape2 = RuntimeAssetCacheClass.get_or_create_trunk_convex_shape(mesh_key, box_mesh, 0)
+
+	# Assert
+	assert_not_null(trunk_shape1, "Trunk shape deve ser gerado")
+	assert_eq(trunk_shape1, trunk_shape2, "Segunda chamada de trunk shape deve retornar mesma instância do cache")
+
+	# Cleanup
+	RuntimeAssetCacheClass.clear()

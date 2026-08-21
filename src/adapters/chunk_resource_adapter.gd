@@ -318,3 +318,8 @@ func _read_json_raw(path: String) -> Variant:
 	if err == OK:
 		return json.data
 	return null
+
+
+func load_collision_rules_dict() -> Dictionary:
+	var path = "%s/static_mesh_collision_rules.json" % base_maps_path
+	return _read_json_as_dict(path)

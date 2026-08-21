@@ -21,7 +21,7 @@ func test_valid_step_within_speed_limit() -> void:
 	var to_p = Vector3(0.2, 0.0, 0.1) # Distância ~0.223m
 
 	# Act
-	var res = validator.validate_step(from_p, to_p, null, null, 0.05, 6.0)
+	var res = validator.validate_step(from_p, to_p, null, null, null, 0.05, 6.0)
 
 	# Assert
 	assert_true(res["valid"], "Movimento legítimo dentro da velocidade permitida")
@@ -36,7 +36,7 @@ func test_teleport_or_speedhack_rejection() -> void:
 	var to_p = Vector3(10.0, 0.0, 0.0)
 
 	# Act
-	var res = validator.validate_step(from_p, to_p, null, null, 0.05, 6.0)
+	var res = validator.validate_step(from_p, to_p, null, null, null, 0.05, 6.0)
 
 	# Assert
 	assert_false(res["valid"], "Movimento excessivo deve ser rejeitado")
@@ -61,9 +61,54 @@ func test_steep_mountain_slope_rejection() -> void:
 	var from_p = Vector3(0.0, 0.0, 0.0)
 	var to_p = Vector3(0.1, 0.0, 0.0)
 
-	# Act: Limite de declive 1.0 (45 graus), rampa tem declive > 20.0
-	var res = validator.validate_step(from_p, to_p, sampler, null, 0.05, 6.0, 1.0)
+	# Act: Limite de declive 1.0 (45 graus),	# Act: Passo tentando escalar a encosta íngreme
+	var res = validator.validate_step(
+		Vector3(0.1, 0.0, 0.5),
+		Vector3(0.3, 0.0, 0.5),
+		sampler,
+		null,
+		null,
+		0.05,
+		6.0,
+		1.5
+	)
 
 	# Assert
-	assert_false(res["valid"], "Subida de montanha com declive excessivo deve ser bloqueada")
+	assert_false(res["valid"], "Movimento em declive impenetrável deve ser rejeitado")
 	assert_eq(res["reason"], "SLOPE_TOO_STEEP")
+
+
+func test_static_obstacle_collision_rejection() -> void:
+	# Arrange
+	var SpatialObstacleIndexClass = preload("res://src/domain/spatial_obstacle_index.gd")
+	var SpatialStaticObstacleClass = preload("res://src/domain/spatial_static_obstacle.gd")
+
+	var index = SpatialObstacleIndexClass.new("test_chunk", 16.0)
+	var tree = SpatialStaticObstacleClass.create_cylinder(
+		"tree_01",
+		Vector2(5.0, 5.0),
+		0.5,
+		0.0,
+		10.0
+	)
+	index.add_obstacle(tree)
+
+	var validator = ServerMovementValidatorClass.new()
+	var from_p = Vector3(4.6, 1.0, 5.0)
+	var to_p = Vector3(4.8, 1.0, 5.0) # Passo de 0.2m avançando para dentro do tronco
+
+	# Act
+	var res = validator.validate_step(
+		from_p,
+		to_p,
+		null,
+		null,
+		index,
+		0.05,
+		6.0
+	)
+
+	# Assert
+	assert_false(res["valid"], "Movimento colidindo com obstáculo estático deve ser rejeitado")
+	assert_eq(res["reason"], "OBSTACLE_COLLISION")
+	assert_almost_eq(res["corrected_pos"], from_p, Vector3(0.001, 0.001, 0.001))

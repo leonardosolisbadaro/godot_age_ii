@@ -50,6 +50,11 @@ const CAPSULE_RADIUS: float = 0.4
 ## Porque: Estatura humana padrão.
 const CAPSULE_HEIGHT: float = 1.8
 
+## @const MAX_STEP_HEIGHT (float)
+## O que: Altura máxima de degrau que o avatar transpõe automaticamente em metros (0.40m = 40cm).
+## Porque: Permite subir calçadas, escadas e soleiras de portas sem travar em quinas de 90°.
+const MAX_STEP_HEIGHT: float = 0.40
+
 ## @const PIVOT_HEIGHT (float)
 ## O que: Altura do pivô da câmera orbital em relação aos pés do avatar (1.4m).
 ## Porque: Linha de visão na altura do tórax/cabeça.
@@ -248,4 +253,34 @@ func _physics_process(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, 0.0, speed * delta * DECELERATION_RATE)
 		velocity.z = move_toward(velocity.z, 0.0, speed * delta * DECELERATION_RATE)
 
+	var horiz_vel = Vector3(velocity.x, 0.0, velocity.z)
+	var was_grounded = is_on_floor()
+
 	move_and_slide()
+
+	# Rotina de Stair Stepping (Subida de Degraus e Soleiras de Portas)
+	if was_grounded and horiz_vel.length_squared() > 0.1 and not is_flying:
+		_handle_stair_step_up(horiz_vel, delta)
+
+
+func _handle_stair_step_up(horiz_vel: Vector3, delta: float) -> void:
+	if not is_on_wall():
+		return
+
+	var step_motion = horiz_vel.normalized() * (horiz_vel.length() * delta + 0.05)
+
+	# 1. Testa elevação vertical de MAX_STEP_HEIGHT
+	var up_transform = global_transform.translated(Vector3(0.0, MAX_STEP_HEIGHT, 0.0))
+	var test_collision = KinematicCollision3D.new()
+
+	# Se o espaço acima estiver livre:
+	if not test_move(global_transform, Vector3(0.0, MAX_STEP_HEIGHT, 0.0), test_collision):
+		# 2. Testa avanço horizontal no topo do degrau
+		if not test_move(up_transform, step_motion, test_collision):
+			# 3. Testa descida para o topo do degrau
+			var down_vec = Vector3(0.0, -MAX_STEP_HEIGHT, 0.0)
+			if test_move(up_transform.translated(step_motion), down_vec, test_collision):
+				var surface_normal = test_collision.get_normal()
+				if surface_normal.y >= 0.5: # Chão caminhável
+					global_position = up_transform.origin + step_motion + (down_vec.normalized() * test_collision.get_travel().length())
+					velocity.y = 0.0

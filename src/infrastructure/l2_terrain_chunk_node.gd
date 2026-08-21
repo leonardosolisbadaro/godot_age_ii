@@ -250,8 +250,6 @@ func _setup_local_water_volumes() -> void:
 		mat.shader = OceanShader
 		plane.material_override = mat
 
-		# top_level garante posicionamento exato nas coordenadas globais do volume
-		plane.top_level = true
 		plane.position = Vector3(c_x, surface_y, c_z)
 		plane.name = "WaterVolume_" + str(v.get("name", "Local"))
 		add_child(plane)

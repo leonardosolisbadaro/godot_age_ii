@@ -13,6 +13,7 @@ extends RefCounted
 
 const HeightfieldSamplerClass = preload("res://src/domain/heightfield_sampler.gd")
 const TerrainHoleMaskClass = preload("res://src/domain/terrain_hole_mask.gd")
+const SpatialObstacleIndexClass = preload("res://src/domain/spatial_obstacle_index.gd")
 
 # ==============================================================================
 # CONSTANTES SEMÂNTICAS DE VALIDAÇÃO DE MOVIMENTO
@@ -43,16 +44,22 @@ const DEFAULT_TOLERANCE_FACTOR: float = 1.3
 ## Porque: Evita rejeitar micro-movimentos imperceptíveis.
 const MIN_HORIZONTAL_MOVE_THRESHOLD: float = 0.1
 
+## @const DEFAULT_ENTITY_RADIUS (float)
+## O que: Raio físico padrão da cápsula de colisão da entidade (0.4m = 40cm).
+const DEFAULT_ENTITY_RADIUS: float = 0.4
+
 
 func validate_step(
 	from_pos: Vector3,
 	to_pos: Vector3,
 	sampler: HeightfieldSamplerClass = null,
 	hole_mask: TerrainHoleMaskClass = null,
+	obstacle_index: SpatialObstacleIndexClass = null,
 	delta_time: float = DEFAULT_DELTA_TIME,
 	max_speed: float = DEFAULT_MAX_SPEED,
 	max_slope_ratio: float = DEFAULT_MAX_SLOPE_RATIO,
 	tolerance_factor: float = DEFAULT_TOLERANCE_FACTOR,
+	entity_radius: float = DEFAULT_ENTITY_RADIUS,
 ) -> Dictionary:
 	var result = {
 		"valid": true,
@@ -70,7 +77,14 @@ func validate_step(
 		result["reason"] = "SPEED_LIMIT_EXCEEDED"
 		return result
 
-	# 2. Validação de Terreno e Elevação (se sampler disponível)
+	# 2. Validação de Obstáculos Estáticos (Troncos, Paredes, Rochas)
+	if obstacle_index and obstacle_index.is_segment_blocked(from_pos, to_pos, entity_radius):
+		result["valid"] = false
+		result["corrected_pos"] = from_pos
+		result["reason"] = "OBSTACLE_COLLISION"
+		return result
+
+	# 3. Validação de Terreno e Elevação (se sampler disponível)
 	if sampler:
 		var ground_y = sampler.get_height_at(to_pos.x, to_pos.z)
 		var slope = sampler.get_slope_ratio_at(to_pos.x, to_pos.z)

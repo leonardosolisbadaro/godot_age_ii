@@ -155,3 +155,16 @@ func test_save_and_load_water_volumes_fix_io() -> void:
 	if FileAccess.file_exists(glob_f):
 		DirAccess.remove_absolute(glob_f)
 
+
+func test_load_collision_rules_dict() -> void:
+	# Arrange
+	var adapter = ChunkResourceAdapterClass.new("res://assets/maps")
+
+	# Act
+	var rules = adapter.load_collision_rules_dict()
+
+	# Assert
+	assert_false(rules.is_empty(), "static_mesh_collision_rules.json deve ser carregado com sucesso")
+	assert_true(rules.has("categories"), "Deve conter a chave 'categories'")
+	assert_true(rules.has("custom_overrides"), "Deve conter a chave 'custom_overrides'")
+
