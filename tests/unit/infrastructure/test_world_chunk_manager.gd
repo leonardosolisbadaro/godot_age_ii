@@ -118,3 +118,119 @@ func test_update_static_actor_transform_and_save_fix() -> void:
 
 	# Cleanup
 	manager.free()
+
+
+func test_sample_world_altitude_in_manager() -> void:
+	# Arrange
+	var manager = WorldChunkManagerClass.new("res://assets/maps", 1500.0)
+	manager.register_chunk("16_24")
+
+	# Act: Amostra altitude dentro do chunk 16_24
+	var origin_16_24 = Vector3(-7864.32, 0.0, 18350.08)
+	var sample_res = manager.sample_world_altitude(origin_16_24.x, origin_16_24.z)
+
+	# Assert
+	assert_true(sample_res.get("found", false), "Deve encontrar o chunk 16_24 e retornar altitude")
+	assert_eq(sample_res.get("chunk_name", ""), "16_24")
+	assert_true(sample_res.has("altitude"))
+
+	# Act 2: Coordenada fora do mundo
+	var outside_res = manager.sample_world_altitude(999999.0, 999999.0)
+	assert_false(outside_res.get("found", true), "Não deve encontrar altitude fora do mapa")
+
+	# Cleanup
+	manager.free()
+
+
+func test_update_actor_collision_type_in_manager() -> void:
+	# Arrange
+	var manager = WorldChunkManagerClass.new("res://assets/maps", 1500.0)
+	manager.register_chunk("16_24")
+	var origin_16_24 = Vector3(-6552.0, -100.0, 19659.0)
+	manager.update_streaming(origin_16_24)
+
+	var actors = manager.get_static_actors_in_radius(origin_16_24, 500.0)
+	if not actors.is_empty():
+		var actor = actors[0]
+		var actor_name = actor.get("actor_name", "")
+		var chunk_name = actor.get("chunk_name", "16_24")
+
+		# Act 1: Altera colisão para concave
+		var res_concave = manager.update_actor_collision_type(actor_name, "concave", chunk_name)
+		assert_true(res_concave, "update_actor_collision_type para concave deve retornar true")
+
+		# Act 2: Altera colisão para pass_through
+		var res_pass = manager.update_actor_collision_type(actor_name, "pass_through", chunk_name)
+		assert_true(res_pass, "update_actor_collision_type para pass_through deve retornar true")
+
+	# Cleanup
+	manager.free()
+
+
+func test_staging_buffer_and_batch_commit_in_manager() -> void:
+	# Arrange
+	var manager = WorldChunkManagerClass.new("res://assets/maps", 1500.0)
+	manager.register_chunk("16_24")
+	var origin_16_24 = Vector3(-6552.0, -100.0, 19659.0)
+	manager.update_streaming(origin_16_24)
+
+	var actors = manager.get_static_actors_in_radius(origin_16_24, 500.0)
+	if not actors.is_empty():
+		var actor = actors[0]
+		var actor_name = actor.get("actor_name", "")
+		var chunk_name = actor.get("chunk_name", "16_24")
+
+		# Act 1: Modifica ator para popular o buffer
+		var new_pos = Vector3(50.0, -120.0, 80.0)
+		var new_rot = Vector3(0.0, 30.0, 0.0)
+		var new_sc = Vector3(2.0, 2.0, 2.0)
+		manager.update_static_actor_transform(actor_name, new_pos, new_rot, new_sc, chunk_name)
+
+		# Assert 1: Ator deve ser dirty e summary deve contabilizar
+		assert_true(manager.is_actor_dirty(actor_name, chunk_name), "Ator modificado deve estar marcado como dirty")
+		var summary = manager.get_pending_fixes_summary()
+		assert_eq(summary.get("total_actors"), 1, "Deve ter 1 ator pendente")
+		assert_eq(summary.get("chunks_count"), 1, "Deve ter 1 chunk modificado")
+
+		# Act 2: Salva tudo em lote
+		var batch_res = manager.save_all_pending_actor_fixes()
+		assert_true(batch_res.get("success", false))
+		assert_eq(batch_res.get("saved_actors_count"), 1)
+		assert_false(manager.is_actor_dirty(actor_name, chunk_name), "Buffer deve ser limpo após salvar em lote")
+
+		# Cleanup do arquivo fix temporário
+		var fix_file = "res://assets/maps/%s/chunk_static_actors_fix.json" % chunk_name
+		var glob_f = ProjectSettings.globalize_path(fix_file)
+		if FileAccess.file_exists(glob_f):
+			DirAccess.remove_absolute(glob_f)
+
+	# Cleanup
+	manager.free()
+
+
+func test_staging_buffer_discard_all() -> void:
+	# Arrange
+	var manager = WorldChunkManagerClass.new("res://assets/maps", 1500.0)
+	manager.register_chunk("16_24")
+	var origin_16_24 = Vector3(-6552.0, -100.0, 19659.0)
+	manager.update_streaming(origin_16_24)
+
+	var actors = manager.get_static_actors_in_radius(origin_16_24, 500.0)
+	if not actors.is_empty():
+		var actor = actors[0]
+		var actor_name = actor.get("actor_name", "")
+		var chunk_name = actor.get("chunk_name", "16_24")
+
+		# Act: Modifica ator e depois descarta
+		manager.update_static_actor_transform(actor_name, Vector3(999.0, 999.0, 999.0), Vector3.ZERO, Vector3.ONE, chunk_name)
+		assert_true(manager.is_actor_dirty(actor_name, chunk_name))
+
+		var discarded = manager.discard_all_pending_actor_fixes()
+		assert_eq(discarded, 1, "Deve descartar 1 ator")
+		assert_false(manager.is_actor_dirty(actor_name, chunk_name), "Buffer deve ficar vazio após descarte")
+
+	# Cleanup
+	manager.free()
+
+
+

@@ -102,6 +102,10 @@ var _radius_gizmo: Node3D
 var _mesh_selection_highlighter: Node3D
 var _inspector_radius: float = 40.0
 var _inspector_timer: float = 0.0
+var _selected_actor_name: String = ""
+var _selected_actor_chunk: String = ""
+var _drag_height_offset: float = 0.0
+var _is_dragging_actor: bool = false
 
 
 func _init() -> void:
@@ -180,7 +184,14 @@ func _start_client() -> void:
 	_debug_hud.actor_transform_applied.connect(_on_actor_transform_applied)
 	_debug_hud.actor_fix_saved.connect(_on_actor_fix_saved)
 	_debug_hud.actor_reset_requested.connect(_on_actor_reset_requested)
+	_debug_hud.actor_collision_changed.connect(_on_actor_collision_changed)
+	_debug_hud.actor_collision_save_requested.connect(_on_actor_collision_save_requested)
+	_debug_hud.batch_save_requested.connect(_on_batch_save_requested)
+	_debug_hud.batch_discard_requested.connect(_on_batch_discard_requested)
 	add_child(_debug_hud)
+
+	if _local_player:
+		_local_player.is_ui_hovered_callback = _debug_hud.is_mouse_over_ui
 
 	# 5. Instancia Gizmo de Raio 3D e Highlighter de Seleção
 	_radius_gizmo = RadiusGizmoNodeClass.new(_inspector_radius)
@@ -342,6 +353,7 @@ func _input(event: InputEvent) -> void:
 					)
 					_debug_hud.update_nearby_actors(nearby, _inspector_radius)
 				else:
+					_selected_actor_name = ""
 					_debug_hud.clear_selection()
 					if _mesh_selection_highlighter:
 						_mesh_selection_highlighter.clear_highlight()
@@ -349,6 +361,8 @@ func _input(event: InputEvent) -> void:
 
 		# Tecla ESC: Cancela a seleção de ator e limpa o destaque 3D
 		elif event.keycode == KEY_ESCAPE or event.physical_keycode == KEY_ESCAPE:
+			_selected_actor_name = ""
+			_selected_actor_chunk = ""
 			if _debug_hud:
 				_debug_hud.clear_selection()
 			if _mesh_selection_highlighter:
@@ -372,8 +386,73 @@ func _input(event: InputEvent) -> void:
 					"ATIVADAS" if _directional_light.shadow_enabled else "DESATIVADAS",
 				)
 
-	# Ajuste Dinâmico do Raio de Inspeção com Ctrl + Scroll
+		# Tecla Ctrl + S: Salva em lote todas as alterações pendentes no buffer
+		elif (event.keycode == KEY_S or event.physical_keycode == KEY_S) and event.ctrl_pressed:
+			if _debug_hud and _debug_hud.is_actor_inspector_open():
+				_on_batch_save_requested()
+				get_viewport().set_input_as_handled()
+				return
+
+	# Botão Esquerdo Solto: Finaliza o estado de arrasto de ator
+	if (
+		event is InputEventMouseButton and not event.pressed
+		and event.button_index == MOUSE_BUTTON_LEFT
+	):
+		_is_dragging_actor = false
+
+	# Rotação Rápida de Ator com Shift + Scroll (Yaw +/- 15.0°)
+	elif event is InputEventMouseButton and event.pressed and event.shift_pressed:
+		if not _selected_actor_name.is_empty() and _debug_hud and _world_chunk_manager:
+			var cur_pos = _debug_hud.get_current_position()
+			var cur_rot = _debug_hud.get_current_rotation()
+			var cur_sc = _debug_hud.get_current_scale()
+
+			if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+				cur_rot.y = fmod(cur_rot.y + 15.0, 360.0)
+				_on_actor_transform_applied(_selected_actor_name, cur_pos, cur_rot, cur_sc, _selected_actor_chunk)
+				_debug_hud.set_editor_values(cur_pos, cur_rot, cur_sc, "⚡ Rotação aplicada (+15°)")
+				get_viewport().set_input_as_handled()
+				return
+			elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				cur_rot.y = fmod(cur_rot.y - 15.0, 360.0)
+				_on_actor_transform_applied(_selected_actor_name, cur_pos, cur_rot, cur_sc, _selected_actor_chunk)
+				_debug_hud.set_editor_values(cur_pos, cur_rot, cur_sc, "⚡ Rotação aplicada (-15°)")
+				get_viewport().set_input_as_handled()
+				return
+
+	# Controle Fino de Elevação Vertical (Y) com Ctrl + Scroll (+/- 0.10m suave)
 	elif event is InputEventMouseButton and event.pressed and event.ctrl_pressed:
+		if not _selected_actor_name.is_empty() and _debug_hud and _world_chunk_manager:
+			var cur_pos = _debug_hud.get_current_position()
+			var cur_rot = _debug_hud.get_current_rotation()
+			var cur_sc = _debug_hud.get_current_scale()
+			var step_y = 0.10
+
+			if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+				cur_pos.y = round((cur_pos.y + step_y) * 1000.0) / 1000.0
+				_on_actor_transform_applied(_selected_actor_name, cur_pos, cur_rot, cur_sc, _selected_actor_chunk)
+				_debug_hud.set_editor_values(
+					cur_pos,
+					cur_rot,
+					cur_sc,
+					"⚡ Elevação ajustada (+0.10m)",
+				)
+				get_viewport().set_input_as_handled()
+				return
+			elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				cur_pos.y = round((cur_pos.y - step_y) * 1000.0) / 1000.0
+				_on_actor_transform_applied(_selected_actor_name, cur_pos, cur_rot, cur_sc, _selected_actor_chunk)
+				_debug_hud.set_editor_values(
+					cur_pos,
+					cur_rot,
+					cur_sc,
+					"⚡ Elevação ajustada (-0.10m)",
+				)
+				get_viewport().set_input_as_handled()
+				return
+
+	# Ajuste Dinâmico do Raio de Inspeção com Alt + Scroll
+	elif event is InputEventMouseButton and event.pressed and event.alt_pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_inspector_radius = clampf(_inspector_radius + 5.0, 5.0, 100.0)
 			if _radius_gizmo:
@@ -384,6 +463,8 @@ func _input(event: InputEvent) -> void:
 					_inspector_radius,
 				)
 				_debug_hud.update_nearby_actors(nearby, _inspector_radius)
+			get_viewport().set_input_as_handled()
+			return
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_inspector_radius = clampf(_inspector_radius - 5.0, 5.0, 100.0)
 			if _radius_gizmo:
@@ -394,9 +475,88 @@ func _input(event: InputEvent) -> void:
 					_inspector_radius,
 				)
 				_debug_hud.update_nearby_actors(nearby, _inspector_radius)
+			get_viewport().set_input_as_handled()
+			return
+
+	# Arrasto Livre de Ator no Relevo com Shift + Botão Esquerdo do Mouse Pressionado + Movimento do Mouse
+	elif (
+		event is InputEventMouseMotion and Input.is_key_pressed(KEY_SHIFT)
+		and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	):
+		if not _selected_actor_name.is_empty() and _debug_hud and _world_chunk_manager:
+			var cur_p = _debug_hud.get_current_position()
+			if not _is_dragging_actor:
+				_is_dragging_actor = true
+				var sample_init = _world_chunk_manager.sample_world_altitude(cur_p.x, cur_p.z)
+				var base_ground = float(sample_init.get("altitude", cur_p.y)) if sample_init.get(
+					"found",
+					false,
+				) else cur_p.y
+				_drag_height_offset = cur_p.y - base_ground
+
+			var camera = get_viewport().get_camera_3d()
+			if camera:
+				var mouse_pos = event.position
+				var ray_origin = camera.project_ray_origin(mouse_pos)
+				var ray_normal = camera.project_ray_normal(mouse_pos)
+
+				var target_x: float = 0.0
+				var target_z: float = 0.0
+				var ground_y: float = 0.0
+				var hit_found: bool = false
+
+				var space_state = get_world_3d().direct_space_state
+				if space_state:
+					var query = PhysicsRayQueryParameters3D.create(
+						ray_origin,
+						ray_origin + ray_normal * 2500.0,
+					)
+					var hit = space_state.intersect_ray(query)
+					if not hit.is_empty():
+						target_x = hit.position.x
+						target_z = hit.position.z
+						ground_y = hit.position.y
+						hit_found = true
+
+				if not hit_found:
+					var denom = ray_normal.y if abs(ray_normal.y) > 0.0001 else -0.0001
+					var t = (cur_p.y - ray_origin.y) / denom
+					if t > 0.0:
+						target_x = ray_origin.x + ray_normal.x * t
+						target_z = ray_origin.z + ray_normal.z * t
+
+				# Ancoragem matemática contínua e precisa via HeightfieldSampler
+				var sample = _world_chunk_manager.sample_world_altitude(target_x, target_z)
+				if sample.get("found", false):
+					ground_y = float(sample.get("altitude", ground_y))
+
+				var target_y = ground_y + _drag_height_offset
+				var new_pos = Vector3(
+					round(target_x * 1000.0) / 1000.0,
+					round(target_y * 1000.0) / 1000.0,
+					round(target_z * 1000.0) / 1000.0,
+				)
+				var cur_rot = _debug_hud.get_current_rotation()
+				var cur_sc = _debug_hud.get_current_scale()
+
+				_on_actor_transform_applied(
+					_selected_actor_name,
+					new_pos,
+					cur_rot,
+					cur_sc,
+					_selected_actor_chunk,
+				)
+				_debug_hud.set_editor_values(
+					new_pos,
+					cur_rot,
+					cur_sc,
+					"⚡ Arrastando ator (ancorado ao solo)...",
+				)
 
 
 func _on_actor_selected_in_hud(actor_dict: Dictionary) -> void:
+	_selected_actor_name = actor_dict.get("actor_name", "")
+	_selected_actor_chunk = actor_dict.get("chunk_name", "")
 	if not _mesh_selection_highlighter:
 		return
 
@@ -414,11 +574,13 @@ func _on_actor_transform_applied(
 	actor_name: String,
 	pos: Vector3,
 	rot_deg: Vector3,
-	sc: Vector3
+	sc: Vector3,
+	chunk_name: String = "",
 ) -> void:
 	if not _world_chunk_manager:
 		return
-	var res = _world_chunk_manager.update_static_actor_transform(actor_name, pos, rot_deg, sc)
+	var target_chunk = chunk_name if not chunk_name.is_empty() else _selected_actor_chunk
+	var res = _world_chunk_manager.update_static_actor_transform(actor_name, pos, rot_deg, sc, target_chunk)
 	if res.get("found", false) and _mesh_selection_highlighter:
 		var mesh = res.get("mesh", null)
 		var xform = res.get("transform", Transform3D.IDENTITY)
@@ -427,35 +589,134 @@ func _on_actor_transform_applied(
 			_mesh_selection_highlighter.highlight_mesh_and_aabb(mesh, xform, aabb)
 		else:
 			_mesh_selection_highlighter.highlight_aabb(aabb)
-		print("[DEBUG] Ator '%s' transform atualizado em tempo real no mundo 3D." % actor_name)
+		_refresh_pending_hud_summary()
+		print("[DEBUG] Ator '%s' [%s] transform atualizado em tempo real no mundo 3D." % [actor_name, target_chunk])
 
 
-func _on_actor_fix_saved(actor_name: String, pos: Vector3, rot_deg: Vector3, sc: Vector3) -> void:
+func _on_actor_fix_saved(
+	actor_name: String,
+	pos: Vector3,
+	rot_deg: Vector3,
+	sc: Vector3,
+	chunk_name: String = "",
+) -> void:
 	if not _world_chunk_manager:
 		return
-	_on_actor_transform_applied(actor_name, pos, rot_deg, sc)
-	var success = _world_chunk_manager.save_actor_fix(actor_name, pos, rot_deg, sc)
+	var target_chunk = chunk_name if not chunk_name.is_empty() else _selected_actor_chunk
+	_on_actor_transform_applied(actor_name, pos, rot_deg, sc, target_chunk)
+	var success = _world_chunk_manager.save_actor_fix(actor_name, pos, rot_deg, sc, target_chunk)
 	if success:
-		print("[DEBUG] chunk_static_actors_fix.json salvo com sucesso para ator '%s'." % actor_name)
+		_refresh_pending_hud_summary()
+		print("[DEBUG] chunk_static_actors_fix.json salvo com sucesso para ator '%s' [%s]." % [actor_name, target_chunk])
 	else:
-		print("[DEBUG] Falha ao salvar chunk_static_actors_fix.json para ator '%s'." % actor_name)
+		print("[DEBUG] Falha ao salvar chunk_static_actors_fix.json para ator '%s' [%s]." % [actor_name, target_chunk])
 
 
-func _on_actor_reset_requested(actor_name: String) -> void:
+func _on_actor_reset_requested(actor_name: String, chunk_name: String = "") -> void:
 	if not _world_chunk_manager:
 		return
-	var raw = _world_chunk_manager.get_raw_actor_data(actor_name)
+	var target_chunk = chunk_name if not chunk_name.is_empty() else _selected_actor_chunk
+	var raw = _world_chunk_manager.get_raw_actor_data(actor_name, target_chunk)
 	if not raw.is_empty():
 		var pos = raw.get("position", Vector3.ZERO)
 		var rot = raw.get("rotation_degrees", Vector3.ZERO)
 		var sc = raw.get("scale", Vector3.ONE)
-		_on_actor_transform_applied(actor_name, pos, rot, sc)
+		_on_actor_transform_applied(actor_name, pos, rot, sc, target_chunk)
+		if _world_chunk_manager.has_method("remove_from_pending_fixes"):
+			_world_chunk_manager.remove_from_pending_fixes(actor_name, target_chunk)
+		_refresh_pending_hud_summary()
 		if _debug_hud:
 			var raw_pos = raw.get("raw_position", pos)
 			var raw_rot = raw.get("raw_rotation_degrees", rot)
 			var raw_sc = raw.get("raw_scale", sc)
-			_debug_hud.set_editor_values(raw_pos, raw_rot, raw_sc, "Valores restaurados para o original!")
-		print("[DEBUG] Ator '%s' resetado para valores originais." % actor_name)
+			_debug_hud.set_editor_values(
+				raw_pos,
+				raw_rot,
+				raw_sc,
+				"Valores restaurados para o original!",
+			)
+		print("[DEBUG] Ator '%s' [%s] resetado para valores originais." % [actor_name, target_chunk])
+
+
+func _refresh_pending_hud_summary() -> void:
+	if not _debug_hud or not _world_chunk_manager:
+		return
+	if _world_chunk_manager.has_method("get_pending_fixes_summary"):
+		var summary = _world_chunk_manager.get_pending_fixes_summary()
+		_debug_hud.update_pending_summary(summary)
+
+
+func _on_batch_save_requested() -> void:
+	if not _world_chunk_manager:
+		return
+	var res = _world_chunk_manager.save_all_pending_actor_fixes()
+	var count = res.get("saved_actors_count", 0)
+	var chunks = res.get("saved_chunks", [])
+	var msg = "💾 Lote salvo: %d atores persistidos nos chunks %s!" % [count, str(chunks)]
+	print("[DEBUG] %s" % msg)
+	_refresh_pending_hud_summary()
+	if _debug_hud:
+		var cur_pos = _debug_hud.get_current_position()
+		var cur_rot = _debug_hud.get_current_rotation()
+		var cur_sc = _debug_hud.get_current_scale()
+		_debug_hud.set_editor_values(cur_pos, cur_rot, cur_sc, msg)
+		if _debug_hud.is_actor_inspector_open():
+			var nearby = _world_chunk_manager.get_static_actors_in_radius(_local_player.position, _inspector_radius)
+			_debug_hud.update_nearby_actors(nearby, _inspector_radius)
+
+
+func _on_batch_discard_requested() -> void:
+	if not _world_chunk_manager:
+		return
+	var count = _world_chunk_manager.discard_all_pending_actor_fixes()
+	var msg = "🔄 Lote descartado: %d atores revertidos para original!" % count
+	print("[DEBUG] %s" % msg)
+	_refresh_pending_hud_summary()
+	if _debug_hud:
+		if not _selected_actor_name.is_empty():
+			var raw = _world_chunk_manager.get_raw_actor_data(_selected_actor_name, _selected_actor_chunk)
+			if not raw.is_empty():
+				_debug_hud.set_editor_values(
+					raw.get("position", Vector3.ZERO),
+					raw.get("rotation_degrees", Vector3.ZERO),
+					raw.get("scale", Vector3.ONE),
+					msg
+				)
+		if _debug_hud.is_actor_inspector_open():
+			var nearby = _world_chunk_manager.get_static_actors_in_radius(_local_player.position, _inspector_radius)
+			_debug_hud.update_nearby_actors(nearby, _inspector_radius)
+
+
+func _on_actor_collision_changed(
+	actor_name: String,
+	new_type: String,
+	chunk_name: String,
+	package_name: String,
+	mesh_name: String,
+) -> void:
+	if not _world_chunk_manager:
+		return
+	var target_chunk = chunk_name if not chunk_name.is_empty() else _selected_actor_chunk
+	var success = _world_chunk_manager.update_actor_collision_type(actor_name, new_type, target_chunk)
+	if success:
+		print("[DEBUG] Colisor do ator '%s' [%s] alterado dinamicamente para %s." % [actor_name, target_chunk, new_type.to_upper()])
+		var tree = get_tree()
+		if tree and tree.debug_collisions_hint:
+			_refresh_collision_shapes_recursive(tree.root)
+
+
+func _on_actor_collision_save_requested(
+	package_name: String,
+	mesh_name: String,
+	collision_type: String,
+) -> void:
+	if not _world_chunk_manager:
+		return
+	var success = _world_chunk_manager.save_collision_rule_override(package_name, mesh_name, collision_type)
+	if success:
+		print("[DEBUG] Regra de colisão salva com sucesso em static_mesh_collision_rules.json para '%s.%s' -> %s." % [package_name, mesh_name, collision_type])
+	else:
+		print("[DEBUG] Falha ao salvar regra de colisão para '%s.%s'." % [package_name, mesh_name])
 
 
 func _toggle_debug_collisions() -> void:

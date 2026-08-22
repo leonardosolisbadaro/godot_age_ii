@@ -307,3 +307,22 @@ func test_apply_water_volumes_fix_dict_format() -> void:
 	assert_true(volumes.has("NewPond"))
 	assert_eq(volumes["NewPond"].get("surface_y_m"), -50.0)
 
+
+func test_save_collision_override_io() -> void:
+	# Arrange
+	var test_maps_path = "res://tests/scratch/maps"
+	var adapter = ChunkResourceAdapterClass.new(test_maps_path)
+	var package_name = "test_village_pkg"
+	var mesh_name = "test_gate_mesh"
+	var collision_type = "concave"
+
+	# Act
+	var saved = adapter.save_collision_override(package_name, mesh_name, collision_type)
+	var loaded_rules = adapter.load_collision_rules_dict()
+	var overrides = loaded_rules.get("custom_overrides", { })
+
+	# Assert
+	assert_true(saved, "save_collision_override deve retornar true ao salvar com sucesso")
+	assert_true(overrides.has("test_village_pkg.test_gate_mesh"), "custom_overrides deve conter a chave do pacote.modelo")
+	assert_eq(overrides["test_village_pkg.test_gate_mesh"].get("type"), "concave")
+

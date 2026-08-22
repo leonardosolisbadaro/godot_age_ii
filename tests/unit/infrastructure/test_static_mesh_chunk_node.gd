@@ -32,3 +32,24 @@ func test_static_mesh_chunk_node_instantiation() -> void:
 
 	# Cleanup
 	node.free()
+
+
+func test_static_mesh_materials_are_two_sided() -> void:
+	# Arrange
+	var node = StaticMeshChunkNodeClass.new("16_24", "res://assets/maps")
+
+	# Act
+	var mat = node._get_or_create_material("test_wall_mat")
+
+	# Assert
+	assert_not_null(mat, "Material deve ser instanciado")
+	if mat is BaseMaterial3D:
+		assert_eq(
+			mat.cull_mode,
+			BaseMaterial3D.CULL_DISABLED,
+			"Todos os materiais estáticos devem usar CULL_DISABLED (Two-Sided) para evitar transparências"
+		)
+
+	# Cleanup
+	node.free()
+

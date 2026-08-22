@@ -1,0 +1,9 @@
+{
+    "categories": {},
+    "custom_overrides": {
+        "test_village_pkg.test_gate_mesh": {
+            "type": "concave"
+        }
+    },
+    "description": "Regras centralizadas e configuráveis de colisão para atores estáticos de mapas (Lineage II / Godotage II)"
+}

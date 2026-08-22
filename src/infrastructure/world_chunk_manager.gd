@@ -16,6 +16,7 @@ const LoadChunkMetadataUseCaseClass = preload("res://src/use_cases/load_chunk_me
 const StreamWorldChunksUseCaseClass = preload("res://src/use_cases/stream_world_chunks_use_case.gd")
 const L2TerrainChunkNodeClass = preload("res://src/infrastructure/l2_terrain_chunk_node.gd")
 const StaticMeshChunkNodeClass = preload("res://src/infrastructure/static_mesh_chunk_node.gd")
+const HeightfieldSamplerClass = preload("res://src/domain/heightfield_sampler.gd")
 
 # ==============================================================================
 # CONSTANTES SEMÂNTICAS DE GERENCIAMENTO DE MUNDO
@@ -41,7 +42,9 @@ var view_radius_meters: float = DEFAULT_VIEW_RADIUS_METERS
 var _known_chunks: Dictionary = { } # { "16_24": TerrainChunkData, ... }
 var _active_terrain_nodes: Dictionary = { } # { "16_24": L2TerrainChunkNode, ... }
 var _active_mesh_nodes: Dictionary = { } # { "16_24": StaticMeshChunkNode, ... }
+var _samplers: Dictionary = { } # { "16_24": HeightfieldSampler, ... }
 var _loading_chunks: Dictionary = { } # { "16_24": true, ... }
+var _pending_actor_fixes: Dictionary = { } # { chunk_name -> { actor_name -> { "position": Vector3, "rotation_degrees": Vector3, "scale": Vector3 } } }
 
 var _resource_adapter: RefCounted
 var _meta_use_case: RefCounted
@@ -216,6 +219,27 @@ func inspect_object_at_ray(ray_origin: Vector3, ray_dir: Vector3) -> Dictionary:
 	return closest_hit
 
 
+func sample_world_altitude(world_x: float, world_z: float) -> Dictionary:
+	for c_name in _known_chunks.keys():
+		var chunk = _known_chunks[c_name]
+		if chunk and chunk.has_method("contains_world_point") and chunk.contains_world_point(world_x, world_z):
+			if not _samplers.has(c_name):
+				var hf_bytes = _resource_adapter.load_heightfield_bytes(c_name)
+				if not hf_bytes.is_empty():
+					var sampler = HeightfieldSamplerClass.from_chunk_data_and_bytes(chunk, hf_bytes)
+					if sampler:
+						_samplers[c_name] = sampler
+			if _samplers.has(c_name):
+				var sampler = _samplers[c_name]
+				var alt = sampler.get_height_at(world_x, world_z)
+				return {
+					"found": true,
+					"chunk_name": c_name,
+					"altitude": alt,
+				}
+	return { "found": false, "altitude": 0.0 }
+
+
 func get_active_chunk_count() -> int:
 	return _active_terrain_nodes.size()
 
@@ -236,19 +260,32 @@ func update_static_actor_transform(
 	actor_name: String,
 	new_pos: Vector3,
 	new_rot_deg: Vector3,
-	new_scale: Vector3
+	new_scale: Vector3,
+	chunk_name: String = ""
 ) -> Dictionary:
 	for m_node in _active_mesh_nodes.values():
+		if not chunk_name.is_empty() and m_node.chunk_name != chunk_name:
+			continue
 		if m_node and m_node.has_method("update_actor_transform"):
 			var res = m_node.update_actor_transform(actor_name, new_pos, new_rot_deg, new_scale)
 			if res.get("found", false):
-				res["chunk_name"] = m_node.chunk_name
+				var target_chunk = m_node.chunk_name
+				res["chunk_name"] = target_chunk
+				if not _pending_actor_fixes.has(target_chunk):
+					_pending_actor_fixes[target_chunk] = { }
+				_pending_actor_fixes[target_chunk][actor_name] = {
+					"position": new_pos,
+					"rotation_degrees": new_rot_deg,
+					"scale": new_scale,
+				}
 				return res
 	return { "found": false }
 
 
-func get_raw_actor_data(actor_name: String) -> Dictionary:
+func get_raw_actor_data(actor_name: String, chunk_name: String = "") -> Dictionary:
 	for m_node in _active_mesh_nodes.values():
+		if not chunk_name.is_empty() and m_node.chunk_name != chunk_name:
+			continue
 		if m_node and m_node.has_method("get_raw_actor_data"):
 			var raw = m_node.get_raw_actor_data(actor_name)
 			if not raw.is_empty():
@@ -256,15 +293,73 @@ func get_raw_actor_data(actor_name: String) -> Dictionary:
 	return { }
 
 
+func update_actor_collision_type(actor_name: String, new_type: String, chunk_name: String = "") -> bool:
+	for m_node in _active_mesh_nodes.values():
+		if not chunk_name.is_empty() and m_node.chunk_name != chunk_name:
+			continue
+		if m_node and m_node.has_method("update_actor_collision_type"):
+			var res = m_node.update_actor_collision_type(actor_name, new_type)
+			if res:
+				return true
+	return false
+
+
+func save_collision_rule_override(package_name: String, mesh_name: String, collision_type: String) -> bool:
+	if _resource_adapter and _resource_adapter.has_method("save_collision_override"):
+		return _resource_adapter.save_collision_override(package_name, mesh_name, collision_type)
+	return false
+
+
+func get_pending_fixes_summary() -> Dictionary:
+	var total_actors = 0
+	var chunks: Array[String] = []
+	for c_name in _pending_actor_fixes.keys():
+		var acts = _pending_actor_fixes[c_name]
+		if acts is Dictionary and not acts.is_empty():
+			total_actors += acts.size()
+			chunks.append(c_name)
+	return {
+		"total_actors": total_actors,
+		"chunks_count": chunks.size(),
+		"chunks": chunks,
+	}
+
+
+func is_actor_dirty(actor_name: String, chunk_name: String = "") -> bool:
+	if not chunk_name.is_empty():
+		return _pending_actor_fixes.has(chunk_name) and _pending_actor_fixes[chunk_name].has(actor_name)
+	for c_name in _pending_actor_fixes.keys():
+		if _pending_actor_fixes[c_name].has(actor_name):
+			return true
+	return false
+
+
+func remove_from_pending_fixes(actor_name: String, chunk_name: String = "") -> void:
+	if not chunk_name.is_empty():
+		if _pending_actor_fixes.has(chunk_name) and _pending_actor_fixes[chunk_name].has(actor_name):
+			_pending_actor_fixes[chunk_name].erase(actor_name)
+			if _pending_actor_fixes[chunk_name].is_empty():
+				_pending_actor_fixes.erase(chunk_name)
+	else:
+		for c_name in _pending_actor_fixes.keys():
+			if _pending_actor_fixes[c_name].has(actor_name):
+				_pending_actor_fixes[c_name].erase(actor_name)
+				if _pending_actor_fixes[c_name].is_empty():
+					_pending_actor_fixes.erase(c_name)
+
+
 func save_actor_fix(
 	actor_name: String,
 	new_pos: Vector3,
 	new_rot_deg: Vector3,
-	new_scale: Vector3
+	new_scale: Vector3,
+	chunk_name: String = ""
 ) -> bool:
 	var target_chunk = ""
 	var raw_actor: Dictionary = { }
 	for m_node in _active_mesh_nodes.values():
+		if not chunk_name.is_empty() and m_node.chunk_name != chunk_name:
+			continue
 		if m_node and m_node.has_method("get_raw_actor_data"):
 			var raw = m_node.get_raw_actor_data(actor_name)
 			if not raw.is_empty():
@@ -333,4 +428,61 @@ func save_actor_fix(
 			"transform": transform_diff,
 		}
 
-	return _resource_adapter.save_static_actors_fix(target_chunk, fix_data)
+	var success = _resource_adapter.save_static_actors_fix(target_chunk, fix_data)
+	if success:
+		remove_from_pending_fixes(actor_name, target_chunk)
+	return success
+
+
+func save_all_pending_actor_fixes() -> Dictionary:
+	var saved_count = 0
+	var saved_chunks: Array[String] = []
+	var chunks_to_process = _pending_actor_fixes.keys().duplicate()
+
+	for c_name in chunks_to_process:
+		var actors_dict = _pending_actor_fixes.get(c_name, { }).duplicate()
+		if not (actors_dict is Dictionary) or actors_dict.is_empty():
+			continue
+
+		for a_name in actors_dict.keys():
+			var t_data = actors_dict[a_name]
+			var pos = t_data.get("position", Vector3.ZERO)
+			var rot = t_data.get("rotation_degrees", Vector3.ZERO)
+			var sc = t_data.get("scale", Vector3.ONE)
+			var ok = save_actor_fix(a_name, pos, rot, sc, c_name)
+			if ok:
+				saved_count += 1
+
+		if not saved_chunks.has(c_name):
+			saved_chunks.append(c_name)
+
+	_pending_actor_fixes.clear()
+	return {
+		"success": true,
+		"saved_actors_count": saved_count,
+		"saved_chunks": saved_chunks,
+	}
+
+
+func discard_all_pending_actor_fixes() -> int:
+	var reverted_count = 0
+	var chunks_to_process = _pending_actor_fixes.keys().duplicate()
+
+	for c_name in chunks_to_process:
+		var actors_dict = _pending_actor_fixes.get(c_name, { }).duplicate()
+		if not (actors_dict is Dictionary):
+			continue
+		for a_name in actors_dict.keys():
+			var raw = get_raw_actor_data(a_name, c_name)
+			if not raw.is_empty():
+				var pos = raw.get("position", Vector3.ZERO)
+				var rot = raw.get("rotation_degrees", Vector3.ZERO)
+				var sc = raw.get("scale", Vector3.ONE)
+				for m_node in _active_mesh_nodes.values():
+					if m_node.chunk_name == c_name and m_node.has_method("update_actor_transform"):
+						m_node.update_actor_transform(a_name, pos, rot, sc)
+						reverted_count += 1
+						break
+
+	_pending_actor_fixes.clear()
+	return reverted_count

@@ -45,9 +45,13 @@ const BYTES_TO_MB: float = 1048576.0
 # ==============================================================================
 
 signal actor_selected(actor_dict: Dictionary)
-signal actor_transform_applied(actor_name: String, pos: Vector3, rot_deg: Vector3, scale: Vector3)
-signal actor_fix_saved(actor_name: String, pos: Vector3, rot_deg: Vector3, scale: Vector3)
-signal actor_reset_requested(actor_name: String)
+signal actor_transform_applied(actor_name: String, pos: Vector3, rot_deg: Vector3, scale: Vector3, chunk_name: String)
+signal actor_fix_saved(actor_name: String, pos: Vector3, rot_deg: Vector3, scale: Vector3, chunk_name: String)
+signal actor_reset_requested(actor_name: String, chunk_name: String)
+signal actor_collision_changed(actor_name: String, new_type: String, chunk_name: String, package_name: String, mesh_name: String)
+signal actor_collision_save_requested(package_name: String, mesh_name: String, collision_type: String)
+signal batch_save_requested()
+signal batch_discard_requested()
 
 var _panel: PanelContainer
 var _label_info: Label
@@ -57,6 +61,10 @@ var _label_inspector: Label
 # Componentes do Inspetor de Atores no Raio (F4)
 var _actor_panel: PanelContainer
 var _label_actor_title: Label
+var _label_pending_summary: Label
+var _btn_batch_save: Button
+var _btn_batch_discard: Button
+var _dirty_actors_set: Dictionary = { }
 var _search_input: LineEdit
 var _item_list: ItemList
 var _active_filter: String = "all"
@@ -65,10 +73,16 @@ var _current_radius: float = 40.0
 var _raw_nearby_actors: Array[Dictionary] = []
 var _filtered_actors: Array[Dictionary] = []
 var _selected_actor_name: String = ""
+var _selected_actor_chunk: String = ""
+var _selected_package_name: String = ""
+var _selected_mesh_name: String = ""
 
 # Componentes do Editor de Ator
 var _editor_box: VBoxContainer
 var _label_editor_title: Label
+var _label_package_info: Label
+var _option_collision_type: OptionButton
+var _btn_save_collision: Button
 var _spin_pos_x: SpinBox
 var _spin_pos_y: SpinBox
 var _spin_pos_z: SpinBox
@@ -195,6 +209,11 @@ func _setup_actor_editor_ui(parent: Control) -> void:
 	_label_editor_title.text = "--- Propriedades do Ator ---"
 	_editor_box.add_child(_label_editor_title)
 
+	_label_package_info = Label.new()
+	_label_package_info.text = "Pacote: -- | Chave: --"
+	_label_package_info.modulate = Color(0.6, 0.9, 1.0)
+	_editor_box.add_child(_label_package_info)
+
 	# 1. Posição (Step de 10m para mudanças rápidas)
 	var lbl_pos = Label.new()
 	lbl_pos.text = "Posição (X, Y, Z):"
@@ -230,9 +249,9 @@ func _setup_actor_editor_ui(parent: Control) -> void:
 
 	var hbox_scale = HBoxContainer.new()
 	_editor_box.add_child(hbox_scale)
-	_spin_scale_x = _create_spinbox(0.001, 100.0, 0.001, 0.25, "X: ", "")
-	_spin_scale_y = _create_spinbox(0.001, 100.0, 0.001, 0.25, "Y: ", "")
-	_spin_scale_z = _create_spinbox(0.001, 100.0, 0.001, 0.25, "Z: ", "")
+	_spin_scale_x = _create_spinbox(-100.0, 100.0, 0.001, 0.25, "X: ", "")
+	_spin_scale_y = _create_spinbox(-100.0, 100.0, 0.001, 0.25, "Y: ", "")
+	_spin_scale_z = _create_spinbox(-100.0, 100.0, 0.001, 0.25, "Z: ", "")
 	_spin_scale_x.value = 1.0
 	_spin_scale_y.value = 1.0
 	_spin_scale_z.value = 1.0
@@ -240,26 +259,66 @@ func _setup_actor_editor_ui(parent: Control) -> void:
 	hbox_scale.add_child(_spin_scale_y)
 	hbox_scale.add_child(_spin_scale_z)
 
-	# 4. Botões de Ação
+	# 4. Colisão Física em Tempo Real e Persistência de Regras
+	var lbl_col = Label.new()
+	lbl_col.text = "Colisão Física (Regra Global):"
+	_editor_box.add_child(lbl_col)
+
+	var hbox_col = HBoxContainer.new()
+	_editor_box.add_child(hbox_col)
+
+	_option_collision_type = OptionButton.new()
+	_option_collision_type.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_option_collision_type.add_item("🏛️ CONCAVE (Oco/Arquitetura)", 0)
+	_option_collision_type.add_item("🪨 CONVEX (Sólido/Props)", 1)
+	_option_collision_type.add_item("🌲 TREE_TRUNK (Tronco)", 2)
+	_option_collision_type.add_item("🌿 PASS_THROUGH (Sem Colisão)", 3)
+	_option_collision_type.item_selected.connect(_on_collision_option_selected)
+	hbox_col.add_child(_option_collision_type)
+
+	_btn_save_collision = Button.new()
+	_btn_save_collision.text = "🛡️ Salvar Colisão"
+	_btn_save_collision.pressed.connect(_on_btn_save_collision_pressed)
+	hbox_col.add_child(_btn_save_collision)
+
+	# 5. Botões de Ação de Transform Individual
 	var hbox_actions = HBoxContainer.new()
 	_editor_box.add_child(hbox_actions)
 
 	var btn_reset = Button.new()
-	btn_reset.text = "🔄 Resetar"
+	btn_reset.text = "🔄 Resetar Ator"
+	btn_reset.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn_reset.pressed.connect(_on_btn_reset_pressed)
 	hbox_actions.add_child(btn_reset)
 
-	var btn_apply = Button.new()
-	btn_apply.text = "⚡ Aplicar"
-	btn_apply.pressed.connect(_on_btn_apply_pressed)
-	hbox_actions.add_child(btn_apply)
-
 	var btn_save = Button.new()
 	btn_save.text = "💾 Salvar Fix"
+	btn_save.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn_save.pressed.connect(_on_btn_save_pressed)
 	hbox_actions.add_child(btn_save)
 
-	# 5. Label de Status
+	# 6. Painel e Botões de Ação em Lote (Batch Commit)
+	_label_pending_summary = Label.new()
+	_label_pending_summary.text = "📦 Pendências: 0 ator(es) em 0 chunk(s)"
+	_label_pending_summary.modulate = Color(0.7, 0.8, 0.9)
+	_editor_box.add_child(_label_pending_summary)
+
+	var hbox_batch = HBoxContainer.new()
+	_editor_box.add_child(hbox_batch)
+
+	_btn_batch_discard = Button.new()
+	_btn_batch_discard.text = "🔄 Descartar Tudo"
+	_btn_batch_discard.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_btn_batch_discard.pressed.connect(_on_btn_batch_discard_pressed)
+	hbox_batch.add_child(_btn_batch_discard)
+
+	_btn_batch_save = Button.new()
+	_btn_batch_save.text = "💾 Salvar Tudo (Lote)"
+	_btn_batch_save.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_btn_batch_save.pressed.connect(_on_btn_batch_save_pressed)
+	hbox_batch.add_child(_btn_batch_save)
+
+	# 7. Label de Status
 	_label_editor_status = Label.new()
 	_label_editor_status.text = ""
 	_editor_box.add_child(_label_editor_status)
@@ -291,21 +350,9 @@ func _on_spinbox_value_changed(_val: float) -> void:
 	var pos = Vector3(_spin_pos_x.value, _spin_pos_y.value, _spin_pos_z.value)
 	var rot = Vector3(_spin_rot_x.value, _spin_rot_y.value, _spin_rot_z.value)
 	var sc = Vector3(_spin_scale_x.value, _spin_scale_y.value, _spin_scale_z.value)
-	actor_transform_applied.emit(_selected_actor_name, pos, rot, sc)
+	actor_transform_applied.emit(_selected_actor_name, pos, rot, sc, _selected_actor_chunk)
 	if _label_editor_status:
 		_label_editor_status.text = "⚡ Atualizado em tempo real!"
-		_label_editor_status.modulate = Color(0.2, 0.9, 1.0)
-
-
-func _on_btn_apply_pressed() -> void:
-	if _selected_actor_name.is_empty():
-		return
-	var pos = Vector3(_spin_pos_x.value, _spin_pos_y.value, _spin_pos_z.value)
-	var rot = Vector3(_spin_rot_x.value, _spin_rot_y.value, _spin_rot_z.value)
-	var sc = Vector3(_spin_scale_x.value, _spin_scale_y.value, _spin_scale_z.value)
-	actor_transform_applied.emit(_selected_actor_name, pos, rot, sc)
-	if _label_editor_status:
-		_label_editor_status.text = "⚡ Posição e colisão aplicadas em tempo real!"
 		_label_editor_status.modulate = Color(0.2, 0.9, 1.0)
 
 
@@ -315,7 +362,7 @@ func _on_btn_save_pressed() -> void:
 	var pos = Vector3(_spin_pos_x.value, _spin_pos_y.value, _spin_pos_z.value)
 	var rot = Vector3(_spin_rot_x.value, _spin_rot_y.value, _spin_rot_z.value)
 	var sc = Vector3(_spin_scale_x.value, _spin_scale_y.value, _spin_scale_z.value)
-	actor_fix_saved.emit(_selected_actor_name, pos, rot, sc)
+	actor_fix_saved.emit(_selected_actor_name, pos, rot, sc, _selected_actor_chunk)
 	if _label_editor_status:
 		_label_editor_status.text = "💾 Fix salvo em chunk_static_actors_fix.json!"
 		_label_editor_status.modulate = Color(0.2, 1.0, 0.4)
@@ -324,7 +371,7 @@ func _on_btn_save_pressed() -> void:
 func _on_btn_reset_pressed() -> void:
 	if _selected_actor_name.is_empty():
 		return
-	actor_reset_requested.emit(_selected_actor_name)
+	actor_reset_requested.emit(_selected_actor_name, _selected_actor_chunk)
 
 
 func set_editor_values(
@@ -380,9 +427,9 @@ func set_editor_values(
 			_spin_scale_z.value = sc.z
 
 	_is_populating_fields = false
-	if _label_editor_status:
-		_label_editor_status.text = status_msg if not status_msg.is_empty() else "🔄 Valores restaurados para o original!"
-		_label_editor_status.modulate = Color(1.0, 0.8, 0.2)
+	if _label_editor_status and not status_msg.is_empty():
+		_label_editor_status.text = status_msg
+		_label_editor_status.modulate = Color(1.0, 0.85, 0.2)
 
 
 func _on_search_text_changed(new_text: String) -> void:
@@ -399,13 +446,33 @@ func _on_actor_item_selected(index: int) -> void:
 	if index >= 0 and index < _filtered_actors.size():
 		var actor_data = _filtered_actors[index]
 		_selected_actor_name = actor_data.get("actor_name", "")
+		_selected_actor_chunk = actor_data.get("chunk_name", "")
+		_selected_package_name = actor_data.get("package_name", "")
+		_selected_mesh_name = actor_data.get("mesh_name", "")
+
 		if _editor_box:
 			_editor_box.visible = true
 		if _label_editor_title:
-			_label_editor_title.text = "--- Propriedades: %s (%s) ---" % [
+			_label_editor_title.text = "--- Propriedades: %s [%s] (%s) ---" % [
 				actor_data.get("actor_name", ""),
+				_selected_actor_chunk,
 				actor_data.get("mesh_name", ""),
 			]
+
+		var full_key = "%s.%s" % [_selected_package_name, _selected_mesh_name] if not _selected_package_name.is_empty() else _selected_mesh_name
+		if _label_package_info:
+			_label_package_info.text = "Pacote: %s | Chave: %s" % [_selected_package_name, full_key]
+
+		var c_type = actor_data.get("classification_type", "convex").to_lower()
+		if _option_collision_type:
+			if "tree_trunk" in c_type:
+				_option_collision_type.selected = 2
+			elif c_type == "concave":
+				_option_collision_type.selected = 0
+			elif c_type == "pass_through":
+				_option_collision_type.selected = 3
+			else:
+				_option_collision_type.selected = 1
 
 		var raw_pos = actor_data.get("raw_position")
 		var raw_rot = actor_data.get("raw_rotation_degrees")
@@ -419,6 +486,46 @@ func _on_actor_item_selected(index: int) -> void:
 		actor_selected.emit(actor_data)
 
 
+func _on_collision_option_selected(idx: int) -> void:
+	if _selected_actor_name.is_empty() or not _option_collision_type:
+		return
+	var type_str = "convex"
+	match idx:
+		0: type_str = "concave"
+		1: type_str = "convex"
+		2: type_str = "tree_trunk"
+		3: type_str = "pass_through"
+	actor_collision_changed.emit(
+		_selected_actor_name,
+		type_str,
+		_selected_actor_chunk,
+		_selected_package_name,
+		_selected_mesh_name,
+	)
+	if _label_editor_status:
+		_label_editor_status.text = "⚡ Colisor alterado para %s!" % type_str.to_upper()
+		_label_editor_status.modulate = Color(0.2, 0.9, 1.0)
+
+
+func _on_btn_save_collision_pressed() -> void:
+	if _selected_mesh_name.is_empty() or not _option_collision_type:
+		return
+	var type_str = "convex"
+	match _option_collision_type.selected:
+		0: type_str = "concave"
+		1: type_str = "convex"
+		2: type_str = "tree_trunk"
+		3: type_str = "pass_through"
+	actor_collision_save_requested.emit(
+		_selected_package_name,
+		_selected_mesh_name,
+		type_str,
+	)
+	if _label_editor_status:
+		_label_editor_status.text = "🛡️ Regra de colisão salva em static_mesh_collision_rules.json!"
+		_label_editor_status.modulate = Color(0.2, 1.0, 0.4)
+
+
 func toggle_actor_inspector() -> void:
 	if _actor_panel:
 		_actor_panel.visible = not _actor_panel.visible
@@ -428,8 +535,43 @@ func is_actor_inspector_open() -> bool:
 	return _actor_panel != null and _actor_panel.visible
 
 
+func get_selected_actor_name() -> String:
+	return _selected_actor_name
+
+
+func get_selected_actor_chunk() -> String:
+	return _selected_actor_chunk
+
+
+func get_current_position() -> Vector3:
+	return Vector3(
+		_spin_pos_x.value if _spin_pos_x else 0.0,
+		_spin_pos_y.value if _spin_pos_y else 0.0,
+		_spin_pos_z.value if _spin_pos_z else 0.0,
+	)
+
+
+func get_current_rotation() -> Vector3:
+	return Vector3(
+		_spin_rot_x.value if _spin_rot_x else 0.0,
+		_spin_rot_y.value if _spin_rot_y else 0.0,
+		_spin_rot_z.value if _spin_rot_z else 0.0,
+	)
+
+
+func get_current_scale() -> Vector3:
+	return Vector3(
+		_spin_scale_x.value if _spin_scale_x else 1.0,
+		_spin_scale_y.value if _spin_scale_y else 1.0,
+		_spin_scale_z.value if _spin_scale_z else 1.0,
+	)
+
+
 func clear_selection() -> void:
 	_selected_actor_name = ""
+	_selected_actor_chunk = ""
+	_selected_package_name = ""
+	_selected_mesh_name = ""
 	if _editor_box:
 		_editor_box.visible = false
 	if _item_list:
@@ -473,7 +615,7 @@ func _apply_filters_and_refresh_list() -> void:
 		_filtered_actors.append(a)
 
 	if _label_actor_title:
-		_label_actor_title.text = "INSPETOR DE ATORES (Raio: %.0fm | %d encontrados)\n[Ctrl + Scroll] Ajustar Raio" % [
+		_label_actor_title.text = "INSPETOR DE ATORES (Raio: %.0fm | %d encontrados)\n[Alt + Scroll] Ajustar Raio" % [
 			_current_radius,
 			_filtered_actors.size(),
 		]
@@ -483,18 +625,70 @@ func _apply_filters_and_refresh_list() -> void:
 		var a = _filtered_actors[i]
 		var dist = a.get("distance", 0.0)
 		var c_type = a.get("classification_type", "convex").to_upper()
-		var item_text = "[%.1fm] %s | %s [%s]" % [
+		var chunk_tag = "[%s]" % a.get("chunk_name", "") if not a.get("chunk_name", "").is_empty() else ""
+		var is_dirty = _dirty_actors_set.has("%s:%s" % [a.get("chunk_name", ""), a.get("actor_name", "")]) or _dirty_actors_set.has(a.get("actor_name", ""))
+		var dirty_prefix = "* " if is_dirty else ""
+		var item_text = "%s[%.1fm] %s %s | %s [%s]" % [
+			dirty_prefix,
 			dist,
 			a.get("actor_name", "Actor"),
+			chunk_tag,
 			a.get("mesh_name", "Mesh"),
 			c_type,
 		]
 		_item_list.add_item(item_text)
-		if not _selected_actor_name.is_empty() and a.get("actor_name", "") == _selected_actor_name:
+		if is_dirty:
+			_item_list.set_item_custom_fg_color(i, Color(1.0, 0.85, 0.2))
+		if (
+			not _selected_actor_name.is_empty()
+			and a.get("actor_name", "") == _selected_actor_name
+			and (
+				_selected_actor_chunk.is_empty()
+				or a.get("chunk_name", "") == _selected_actor_chunk
+			)
+		):
 			selected_idx = i
 
 	if selected_idx >= 0:
 		_item_list.select(selected_idx)
+
+
+func update_pending_summary(summary: Dictionary) -> void:
+	var total = int(summary.get("total_actors", 0))
+	var chunks_cnt = int(summary.get("chunks_count", 0))
+	if _label_pending_summary:
+		_label_pending_summary.text = "📦 Pendências: %d ator(es) em %d chunk(s)" % [total, chunks_cnt]
+		if total > 0:
+			_label_pending_summary.modulate = Color(1.0, 0.85, 0.2)
+		else:
+			_label_pending_summary.modulate = Color(0.7, 0.8, 0.9)
+
+
+func set_dirty_actors(dirty_map: Dictionary) -> void:
+	_dirty_actors_set = dirty_map
+	_apply_filters_and_refresh_list()
+
+
+func _on_btn_batch_save_pressed() -> void:
+	batch_save_requested.emit()
+
+
+func _on_btn_batch_discard_pressed() -> void:
+	batch_discard_requested.emit()
+
+
+func is_mouse_over_ui() -> bool:
+	var vp = get_viewport()
+	if not vp:
+		return false
+	var mouse_pos = vp.get_mouse_position()
+	if _actor_panel and _actor_panel.visible and _actor_panel.get_global_rect().has_point(mouse_pos):
+		return true
+	if _panel and _panel.visible and _panel.get_global_rect().has_point(mouse_pos):
+		return true
+	if _inspector_panel and _inspector_panel.visible and _inspector_panel.get_global_rect().has_point(mouse_pos):
+		return true
+	return false
 
 
 func update_telemetry(

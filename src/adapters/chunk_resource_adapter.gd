@@ -359,3 +359,38 @@ func _read_json_raw(path: String) -> Variant:
 func load_collision_rules_dict() -> Dictionary:
 	var path = "%s/static_mesh_collision_rules.json" % base_maps_path
 	return _read_json_as_dict(path)
+
+
+func save_collision_override(package_name: String, mesh_name: String, collision_type: String) -> bool:
+	var path = "%s/static_mesh_collision_rules.json" % base_maps_path
+	var target = _resolve_write_path(path)
+	if target.is_empty():
+		return false
+
+	var rules = _read_json_as_dict(path)
+	if rules.is_empty():
+		rules = {
+			"description": "Regras centralizadas e configuráveis de colisão para atores estáticos de mapas (Lineage II / Godotage II)",
+			"categories": { },
+			"custom_overrides": { }
+		}
+	if not rules.has("custom_overrides") or not (rules["custom_overrides"] is Dictionary):
+		rules["custom_overrides"] = { }
+
+	var key = "%s.%s" % [package_name, mesh_name] if not package_name.is_empty() else mesh_name
+	rules["custom_overrides"][key] = {
+		"type": collision_type
+	}
+
+	var dir_path = target.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir_path):
+		DirAccess.make_dir_recursive_absolute(dir_path)
+
+	var file = FileAccess.open(target, FileAccess.WRITE)
+	if not file:
+		return false
+
+	var json_str = JSON.stringify(rules, "    ")
+	file.store_string(json_str)
+	file.close()
+	return true

@@ -81,3 +81,25 @@ func test_get_transform() -> void:
 	# Assert
 	assert_almost_eq(t.origin, Vector3(100.0, 50.0, -200.0), Vector3(0.001, 0.001, 0.001))
 	assert_almost_eq(t.basis.get_scale(), Vector3(1.5, 1.5, 1.5), Vector3(0.001, 0.001, 0.001))
+
+
+func test_negative_scale_mirroring() -> void:
+	# Arrange
+	var data = StaticMeshInstanceDataClass.new(
+		"church_body",
+		"SI_CH_Body",
+		"res://assets/models/si_v_s/SI_CH_Body.glb",
+		Vector3(-5481.0, -285.0, 20915.0),
+		Vector3.ZERO,
+		Vector3(-1.0, 1.0, 1.0)
+	)
+
+	# Act
+	var t = data.get_transform()
+
+	# Assert: Escala X deve ser negativa (-1.0) preservando a inversão de espelho
+	assert_eq(data.scale.x, -1.0)
+	assert_almost_eq(t.basis.x.x, -1.0, 0.001)
+	assert_almost_eq(t.basis.y.y, 1.0, 0.001)
+	assert_almost_eq(t.basis.z.z, 1.0, 0.001)
+

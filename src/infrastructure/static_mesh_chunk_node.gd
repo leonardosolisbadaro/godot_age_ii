@@ -70,6 +70,7 @@ var _parsed_instances: Array = []
 var _raw_instance_transforms: Dictionary = { }
 var _actor_multimesh_index: Dictionary = { }
 var _collision_shape_map: Dictionary = { }
+var _collision_body: StaticBody3D
 
 
 func _init(p_chunk_name: String = "", p_base_path: String = "res://assets/maps") -> void:
@@ -219,8 +220,9 @@ func _setup_static_mesh_collisions(groups: Dictionary) -> void:
 	if groups.is_empty():
 		return
 
-	var body = StaticBody3D.new()
-	body.name = "StaticMeshesCollisionBody"
+	if not _collision_body:
+		_collision_body = StaticBody3D.new()
+		_collision_body.name = "StaticMeshesCollisionBody"
 
 	for mesh_path in groups.keys():
 		var instances = groups[mesh_path]
@@ -262,10 +264,10 @@ func _setup_static_mesh_collisions(groups: Dictionary) -> void:
 			shape_node.shape = shape
 			shape_node.transform = inst.get_transform()
 			_collision_shape_map[inst.actor_name] = shape_node
-			body.add_child(shape_node)
+			_collision_body.add_child(shape_node)
 
-	if body.get_child_count() > 0:
-		add_child(body)
+	if _collision_body.get_parent() == null and _collision_body.get_child_count() > 0:
+		add_child(_collision_body)
 
 
 func _load_mesh_resource(mesh_path: String) -> Mesh:
@@ -351,6 +353,9 @@ func _get_or_create_material(mat_name: String) -> Material:
 	var std_mat = StandardMaterial3D.new()
 	std_mat.albedo_texture = tex
 	std_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	# Desabilita o descarte de faces traseiras (CULL_DISABLED) para suportar
+	# superfícies de plano único, paredes finas, interiores e geometrias do Lineage II.
+	std_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 	var blend_mode = recipe.get("alpha_blend_mode", "Opaque")
 	if is_foliage or blend_mode == "AlphaTest" or blend_mode == "AlphaBlend":
@@ -361,9 +366,6 @@ func _get_or_create_material(mat_name: String) -> Material:
 		std_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
 		std_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 		std_mat.roughness = FOLIAGE_ROUGHNESS
-
-	if is_two_sided or recipe.get("two_sided", false):
-		std_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 	_material_cache[clean_name] = std_mat
 	return std_mat
@@ -510,6 +512,7 @@ func get_actors_in_radius(center: Vector3, radius: float) -> Array[Dictionary]:
 
 			result.append(
 				{
+					"chunk_name": chunk_name,
 					"actor_name": inst.actor_name,
 					"mesh_name": inst.mesh_name,
 					"package_name": mesh_pkg,
@@ -587,3 +590,56 @@ func update_actor_transform(
 
 func get_raw_actor_data(actor_name: String) -> Dictionary:
 	return _raw_instance_transforms.get(actor_name, { })
+
+
+func update_actor_collision_type(actor_name: String, new_type: String) -> bool:
+	var target_inst: StaticMeshInstanceDataClass = null
+	for inst in _parsed_instances:
+		if inst is StaticMeshInstanceDataClass and inst.actor_name == actor_name:
+			target_inst = inst
+			break
+
+	if not target_inst:
+		return false
+
+	var mesh_path = target_inst.mesh_resource_path
+	var mesh = _load_mesh_resource(mesh_path)
+	if not mesh:
+		return false
+
+	# 1. Se já existe CollisionShape3D para o ator, remove ou atualiza
+	var shape_node: CollisionShape3D = _collision_shape_map.get(actor_name, null)
+
+	if new_type == "pass_through":
+		if shape_node and is_instance_valid(shape_node):
+			shape_node.queue_free()
+			_collision_shape_map.erase(actor_name)
+		return true
+
+	var shape: Shape3D = null
+	if new_type == "tree_trunk" or new_type == "tree_trunk_surface":
+		shape = RuntimeAssetCacheClass.get_or_create_trunk_convex_shape(mesh_path, mesh, 0)
+	elif new_type == "concave":
+		shape = RuntimeAssetCacheClass.get_or_create_trimesh_shape(mesh_path, mesh)
+	else:
+		shape = RuntimeAssetCacheClass.get_or_create_convex_shape(mesh_path, mesh)
+
+	if not shape:
+		return false
+
+	if not _collision_body:
+		_collision_body = StaticBody3D.new()
+		_collision_body.name = "StaticMeshesCollisionBody"
+		add_child(_collision_body)
+
+	if shape_node and is_instance_valid(shape_node):
+		shape_node.shape = shape
+		shape_node.transform = target_inst.get_transform()
+	else:
+		shape_node = CollisionShape3D.new()
+		shape_node.shape = shape
+		shape_node.transform = target_inst.get_transform()
+		_collision_shape_map[actor_name] = shape_node
+		_collision_body.add_child(shape_node)
+
+	return true

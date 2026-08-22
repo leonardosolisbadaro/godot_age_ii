@@ -112,6 +112,8 @@ const MIN_INPUT_THRESHOLD_SQ: float = 0.01
 var is_local: bool = true
 var peer_id: int = 1
 var is_flying: bool = false
+var is_sprinting: bool = false
+var is_ui_hovered_callback: Callable
 
 var _camera_pivot: Node3D
 var _spring_arm: SpringArm3D
@@ -185,6 +187,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_G:
 			is_flying = !is_flying
 			velocity = Vector3.ZERO
+		elif event.keycode == KEY_SPACE:
+			is_sprinting = !is_sprinting
 
 	# Rotação de Câmera com Botão Direito do Mouse
 	if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
@@ -196,9 +200,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			CAMERA_PITCH_MAX_DEG,
 		)
 
-	# Zoom da Câmera com a Roda do Mouse (ignora se Ctrl estiver pressionado)
+	# Zoom da Câmera com a Roda do Mouse (ignora se Ctrl, Alt ou Shift estiver pressionado ou se o cursor estiver sobre a UI)
 	if event is InputEventMouseButton and event.pressed:
-		if event.ctrl_pressed:
+		if event.ctrl_pressed or event.shift_pressed or event.alt_pressed:
+			return
+		if is_ui_hovered_callback.is_valid() and is_ui_hovered_callback.call():
 			return
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_current_zoom = maxf(_current_zoom - CAMERA_ZOOM_STEP, CAMERA_MIN_ZOOM)
@@ -213,7 +219,7 @@ func _physics_process(delta: float) -> void:
 		return
 
 	var speed = MOVE_SPEED
-	if Input.is_key_pressed(KEY_SHIFT):
+	if is_sprinting:
 		speed *= SPRINT_MULTIPLIER
 
 	# Modo Voo (Fly Mode sem gravidade) vs Modo Terrestre
