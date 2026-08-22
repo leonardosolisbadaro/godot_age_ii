@@ -451,7 +451,10 @@ func _on_actor_reset_requested(actor_name: String) -> void:
 		var sc = raw.get("scale", Vector3.ONE)
 		_on_actor_transform_applied(actor_name, pos, rot, sc)
 		if _debug_hud:
-			_debug_hud.set_editor_values(pos, rot, sc, "Valores restaurados para o original!")
+			var raw_pos = raw.get("raw_position", pos)
+			var raw_rot = raw.get("raw_rotation_degrees", rot)
+			var raw_sc = raw.get("raw_scale", sc)
+			_debug_hud.set_editor_values(raw_pos, raw_rot, raw_sc, "Valores restaurados para o original!")
 		print("[DEBUG] Ator '%s' resetado para valores originais." % actor_name)
 
 

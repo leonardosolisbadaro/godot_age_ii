@@ -189,7 +189,11 @@ func save_water_volumes_fix(chunk_name: String, fix_data: Dictionary) -> bool:
 	return true
 
 
-func load_static_actors_array(chunk_name: String, is_server: bool = false) -> Array:
+func load_static_actors_array(
+	chunk_name: String,
+	is_server: bool = false,
+	apply_fix: bool = true
+) -> Array:
 	var root_path = "%s/%s/chunk_static_actors.json" % [base_maps_path, chunk_name]
 	var subfolder = "server" if is_server else "client"
 	var sub_path = "%s/%s/%s/chunk_static_actors.json" % [base_maps_path, chunk_name, subfolder]
@@ -200,15 +204,16 @@ func load_static_actors_array(chunk_name: String, is_server: bool = false) -> Ar
 	if not (raw_actors is Dictionary):
 		raw_actors = { }
 
-	var fix_root = "%s/%s/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
-	var fix_client = "%s/%s/client/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
-	var fix_path = fix_root if _file_exists(fix_root) else fix_client
 	var fix_actors: Dictionary = { }
-	if _file_exists(fix_path):
-		var fix_data = _read_json_as_dict(fix_path)
-		var f_acts = fix_data.get("actors", { })
-		if f_acts is Dictionary:
-			fix_actors = f_acts
+	if apply_fix:
+		var fix_root = "%s/%s/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
+		var fix_client = "%s/%s/client/chunk_static_actors_fix.json" % [base_maps_path, chunk_name]
+		var fix_path = fix_root if _file_exists(fix_root) else fix_client
+		if _file_exists(fix_path):
+			var fix_data = _read_json_as_dict(fix_path)
+			var f_acts = fix_data.get("actors", { })
+			if f_acts is Dictionary:
+				fix_actors = f_acts
 
 	var actors: Array = []
 	for a_name in raw_actors.keys():

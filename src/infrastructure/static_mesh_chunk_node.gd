@@ -95,23 +95,32 @@ func build_static_meshes() -> void:
 	_material_recipes = resource_adapter.load_material_recipes_dict(chunk_name)
 	_collision_rules = resource_adapter.load_collision_rules_dict()
 
-	var actors_raw = resource_adapter.load_static_actors_array(chunk_name, false)
+	# Carrega instâncias ativas (com correções in-time aplicadas)
+	var actors_raw = resource_adapter.load_static_actors_array(chunk_name, false, true)
 	if actors_raw.is_empty():
 		return
 
+	# Popula _raw_instance_transforms com os dados estritamente raw do chunk
+	var raw_only_actors = resource_adapter.load_static_actors_array(chunk_name, false, false)
+	for r_item in raw_only_actors:
+		if r_item is Dictionary and r_item.has("actor_name"):
+			var inst_data = StaticMeshInstanceDataClass.new()
+			inst_data.from_actor_dictionary(r_item)
+			_raw_instance_transforms[r_item["actor_name"]] = {
+				"position": inst_data.position,
+				"raw_position": inst_data.raw_position_array,
+				"rotation_degrees": Vector3(
+					rad_to_deg(inst_data.rotation_radians.x),
+					rad_to_deg(inst_data.rotation_radians.y),
+					rad_to_deg(inst_data.rotation_radians.z)
+				),
+				"raw_rotation_degrees": inst_data.raw_rotation_degrees_array,
+				"scale": inst_data.scale,
+				"raw_scale": inst_data.raw_scale_array,
+			}
+
 	var inst_adapter = StaticMeshInstanceAdapterClass.new()
 	_parsed_instances = inst_adapter.parse_actor_dictionaries(actors_raw)
-	for inst in _parsed_instances:
-		if inst is StaticMeshInstanceDataClass:
-			_raw_instance_transforms[inst.actor_name] = {
-				"position": inst.position,
-				"rotation_degrees": Vector3(
-					rad_to_deg(inst.rotation_radians.x),
-					rad_to_deg(inst.rotation_radians.y),
-					rad_to_deg(inst.rotation_radians.z)
-				),
-				"scale": inst.scale,
-			}
 
 	var groups = inst_adapter.group_by_mesh_path(_parsed_instances)
 
@@ -506,6 +515,15 @@ func get_actors_in_radius(center: Vector3, radius: float) -> Array[Dictionary]:
 					"package_name": mesh_pkg,
 					"full_path": inst.properties.get("full_path", inst.mesh_resource_path),
 					"position": inst.position,
+					"raw_position": inst.raw_position_array,
+					"rotation_degrees": Vector3(
+						rad_to_deg(inst.rotation_radians.x),
+						rad_to_deg(inst.rotation_radians.y),
+						rad_to_deg(inst.rotation_radians.z)
+					),
+					"raw_rotation_degrees": inst.raw_rotation_degrees_array,
+					"scale": inst.scale,
+					"raw_scale": inst.raw_scale_array,
 					"transform": inst.get_transform(),
 					"mesh": mesh,
 					"aabb": inst.get_world_aabb(),

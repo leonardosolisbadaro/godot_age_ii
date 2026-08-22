@@ -35,6 +35,9 @@ var mesh_resource_path: String = ""
 var position: Vector3 = Vector3.ZERO
 var rotation_radians: Vector3 = Vector3.ZERO
 var scale: Vector3 = Vector3.ONE
+var raw_position_array: Array = []
+var raw_rotation_degrees_array: Array = []
+var raw_scale_array: Array = []
 var base_aabb: AABB = AABB(DEFAULT_AABB_POS, DEFAULT_AABB_SIZE)
 var properties: Dictionary = { }
 
@@ -75,8 +78,9 @@ func from_actor_dictionary(dict: Dictionary) -> void:
 	if not (t_dict is Dictionary):
 		t_dict = dict
 
-	var pos_arr = t_dict.get("position_meters")
+	var pos_arr = t_dict.get("position_meters", t_dict.get("location_meters"))
 	if pos_arr is Array and pos_arr.size() >= 3:
+		raw_position_array = [float(pos_arr[0]), float(pos_arr[1]), float(pos_arr[2])]
 		position = Vector3(float(pos_arr[0]), float(pos_arr[1]), float(pos_arr[2]))
 
 	var rot_arr = t_dict.get("rotation_euler_rad")
@@ -85,8 +89,19 @@ func from_actor_dictionary(dict: Dictionary) -> void:
 	if rot_arr is Array and rot_arr.size() >= 3:
 		rotation_radians = Vector3(float(rot_arr[0]), float(rot_arr[1]), float(rot_arr[2]))
 
+	var rot_deg_arr = t_dict.get("rotation_degrees")
+	if rot_deg_arr is Array and rot_deg_arr.size() >= 3:
+		raw_rotation_degrees_array = [float(rot_deg_arr[0]), float(rot_deg_arr[1]), float(rot_deg_arr[2])]
+	elif rot_arr is Array and rot_arr.size() >= 3:
+		raw_rotation_degrees_array = [
+			rad_to_deg(float(rot_arr[0])),
+			rad_to_deg(float(rot_arr[1])),
+			rad_to_deg(float(rot_arr[2]))
+		]
+
 	var scl_arr = t_dict.get("scale")
 	if scl_arr is Array and scl_arr.size() >= 3:
+		raw_scale_array = [float(scl_arr[0]), float(scl_arr[1]), float(scl_arr[2])]
 		scale = Vector3(float(scl_arr[0]), float(scl_arr[1]), float(scl_arr[2]))
 
 	var aabb_dict = dict.get("base_aabb", { })

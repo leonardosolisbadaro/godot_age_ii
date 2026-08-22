@@ -202,37 +202,37 @@ func _setup_actor_editor_ui(parent: Control) -> void:
 
 	var hbox_pos = HBoxContainer.new()
 	_editor_box.add_child(hbox_pos)
-	_spin_pos_x = _create_spinbox(-100000.0, 100000.0, 10.0, "X: ", "m")
-	_spin_pos_y = _create_spinbox(-100000.0, 100000.0, 10.0, "Y: ", "m")
-	_spin_pos_z = _create_spinbox(-100000.0, 100000.0, 10.0, "Z: ", "m")
+	_spin_pos_x = _create_spinbox(-100000.0, 100000.0, 0.001, 10.0, "X: ", " m")
+	_spin_pos_y = _create_spinbox(-100000.0, 100000.0, 0.001, 10.0, "Y: ", " m")
+	_spin_pos_z = _create_spinbox(-100000.0, 100000.0, 0.001, 10.0, "Z: ", " m")
 	hbox_pos.add_child(_spin_pos_x)
 	hbox_pos.add_child(_spin_pos_y)
 	hbox_pos.add_child(_spin_pos_z)
 
-	# 2. Rotação (Step de 15° para giros angulares rápidos)
+	# 2. Rotação (Step decimal fino 0.001 com salto de seta de 15°)
 	var lbl_rot = Label.new()
 	lbl_rot.text = "Rotação (Pitch, Yaw, Roll):"
 	_editor_box.add_child(lbl_rot)
 
 	var hbox_rot = HBoxContainer.new()
 	_editor_box.add_child(hbox_rot)
-	_spin_rot_x = _create_spinbox(-360.0, 360.0, 15.0, "P: ", "°")
-	_spin_rot_y = _create_spinbox(-360.0, 360.0, 15.0, "Y: ", "°")
-	_spin_rot_z = _create_spinbox(-360.0, 360.0, 15.0, "R: ", "°")
+	_spin_rot_x = _create_spinbox(-360.0, 360.0, 0.001, 15.0, "P: ", "°")
+	_spin_rot_y = _create_spinbox(-360.0, 360.0, 0.001, 15.0, "Y: ", "°")
+	_spin_rot_z = _create_spinbox(-360.0, 360.0, 0.001, 15.0, "R: ", "°")
 	hbox_rot.add_child(_spin_rot_x)
 	hbox_rot.add_child(_spin_rot_y)
 	hbox_rot.add_child(_spin_rot_z)
 
-	# 3. Escala (Step de 0.25 para escalas rápidas)
+	# 3. Escala (Step decimal fino 0.001 com salto de seta de 0.25)
 	var lbl_scale = Label.new()
 	lbl_scale.text = "Escala (X, Y, Z):"
 	_editor_box.add_child(lbl_scale)
 
 	var hbox_scale = HBoxContainer.new()
 	_editor_box.add_child(hbox_scale)
-	_spin_scale_x = _create_spinbox(0.01, 100.0, 0.25, "X: ", "")
-	_spin_scale_y = _create_spinbox(0.01, 100.0, 0.25, "Y: ", "")
-	_spin_scale_z = _create_spinbox(0.01, 100.0, 0.25, "Z: ", "")
+	_spin_scale_x = _create_spinbox(0.001, 100.0, 0.001, 0.25, "X: ", "")
+	_spin_scale_y = _create_spinbox(0.001, 100.0, 0.001, 0.25, "Y: ", "")
+	_spin_scale_z = _create_spinbox(0.001, 100.0, 0.001, 0.25, "Z: ", "")
 	_spin_scale_x.value = 1.0
 	_spin_scale_y.value = 1.0
 	_spin_scale_z.value = 1.0
@@ -265,11 +265,19 @@ func _setup_actor_editor_ui(parent: Control) -> void:
 	_editor_box.add_child(_label_editor_status)
 
 
-func _create_spinbox(min_val: float, max_val: float, step_val: float, prefix_str: String, suffix_str: String) -> SpinBox:
+func _create_spinbox(
+	min_val: float,
+	max_val: float,
+	step_val: float,
+	arrow_step_val: float,
+	prefix_str: String,
+	suffix_str: String
+) -> SpinBox:
 	var sb = SpinBox.new()
 	sb.min_value = min_val
 	sb.max_value = max_val
 	sb.step = step_val
+	sb.custom_arrow_step = arrow_step_val
 	sb.prefix = prefix_str
 	sb.suffix = suffix_str
 	sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -319,20 +327,58 @@ func _on_btn_reset_pressed() -> void:
 	actor_reset_requested.emit(_selected_actor_name)
 
 
-func set_editor_values(pos: Vector3, rot_deg: Vector3, sc: Vector3, status_msg: String = "") -> void:
+func set_editor_values(
+	pos: Variant,
+	rot_deg: Variant,
+	sc: Variant,
+	status_msg: String = ""
+) -> void:
 	_is_populating_fields = true
-	if _spin_pos_x:
-		_spin_pos_x.value = pos.x
-		_spin_pos_y.value = pos.y
-		_spin_pos_z.value = pos.z
-	if _spin_rot_x:
-		_spin_rot_x.value = rot_deg.x
-		_spin_rot_y.value = rot_deg.y
-		_spin_rot_z.value = rot_deg.z
-	if _spin_scale_x:
-		_spin_scale_x.value = sc.x
-		_spin_scale_y.value = sc.y
-		_spin_scale_z.value = sc.z
+	if pos is Array and pos.size() >= 3:
+		if _spin_pos_x:
+			_spin_pos_x.value = float(pos[0])
+		if _spin_pos_y:
+			_spin_pos_y.value = float(pos[1])
+		if _spin_pos_z:
+			_spin_pos_z.value = float(pos[2])
+	elif pos is Vector3:
+		if _spin_pos_x:
+			_spin_pos_x.value = pos.x
+		if _spin_pos_y:
+			_spin_pos_y.value = pos.y
+		if _spin_pos_z:
+			_spin_pos_z.value = pos.z
+
+	if rot_deg is Array and rot_deg.size() >= 3:
+		if _spin_rot_x:
+			_spin_rot_x.value = float(rot_deg[0])
+		if _spin_rot_y:
+			_spin_rot_y.value = float(rot_deg[1])
+		if _spin_rot_z:
+			_spin_rot_z.value = float(rot_deg[2])
+	elif rot_deg is Vector3:
+		if _spin_rot_x:
+			_spin_rot_x.value = rot_deg.x
+		if _spin_rot_y:
+			_spin_rot_y.value = rot_deg.y
+		if _spin_rot_z:
+			_spin_rot_z.value = rot_deg.z
+
+	if sc is Array and sc.size() >= 3:
+		if _spin_scale_x:
+			_spin_scale_x.value = float(sc[0])
+		if _spin_scale_y:
+			_spin_scale_y.value = float(sc[1])
+		if _spin_scale_z:
+			_spin_scale_z.value = float(sc[2])
+	elif sc is Vector3:
+		if _spin_scale_x:
+			_spin_scale_x.value = sc.x
+		if _spin_scale_y:
+			_spin_scale_y.value = sc.y
+		if _spin_scale_z:
+			_spin_scale_z.value = sc.z
+
 	_is_populating_fields = false
 	if _label_editor_status:
 		_label_editor_status.text = status_msg if not status_msg.is_empty() else "🔄 Valores restaurados para o original!"
@@ -361,15 +407,15 @@ func _on_actor_item_selected(index: int) -> void:
 				actor_data.get("mesh_name", ""),
 			]
 
-		var pos: Vector3 = actor_data.get("position", Vector3.ZERO)
-		var xform: Transform3D = actor_data.get("transform", Transform3D.IDENTITY)
-		var rot_deg = Vector3(
-			rad_to_deg(xform.basis.get_euler().x),
-			rad_to_deg(xform.basis.get_euler().y),
-			rad_to_deg(xform.basis.get_euler().z)
-		)
-		var sc = xform.basis.get_scale()
-		set_editor_values(pos, rot_deg, sc, "Ator selecionado para edição.")
+		var raw_pos = actor_data.get("raw_position")
+		var raw_rot = actor_data.get("raw_rotation_degrees")
+		var raw_scl = actor_data.get("raw_scale")
+
+		var pos_arg = raw_pos if (raw_pos is Array and raw_pos.size() >= 3) else actor_data.get("position", Vector3.ZERO)
+		var rot_arg = raw_rot if (raw_rot is Array and raw_rot.size() >= 3) else actor_data.get("rotation_degrees", Vector3.ZERO)
+		var scl_arg = raw_scl if (raw_scl is Array and raw_scl.size() >= 3) else actor_data.get("scale", Vector3.ONE)
+
+		set_editor_values(pos_arg, rot_arg, scl_arg, "Ator selecionado para edição.")
 		actor_selected.emit(actor_data)
 
 

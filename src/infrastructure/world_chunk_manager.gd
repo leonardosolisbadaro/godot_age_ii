@@ -292,26 +292,39 @@ func save_actor_fix(
 	var raw_rot: Vector3 = raw_actor.get("rotation_degrees", Vector3.ZERO)
 	var raw_scl: Vector3 = raw_actor.get("scale", Vector3.ONE)
 
-	if not raw_pos.is_equal_approx(new_pos):
-		transform_diff["location_meters"] = [
-			snapped(new_pos.x, 0.001),
-			snapped(new_pos.y, 0.001),
-			snapped(new_pos.z, 0.001),
-		]
+	var raw_pos_arr = raw_actor.get("raw_position", [])
+	var raw_rot_arr = raw_actor.get("raw_rotation_degrees", [])
+	var raw_scl_arr = raw_actor.get("raw_scale", [])
 
-	if not raw_rot.is_equal_approx(new_rot_deg):
-		transform_diff["rotation_degrees"] = [
-			snapped(new_rot_deg.x, 0.01),
-			snapped(new_rot_deg.y, 0.01),
-			snapped(new_rot_deg.z, 0.01),
-		]
+	var raw_pos_x = float(raw_pos_arr[0]) if (raw_pos_arr is Array and raw_pos_arr.size() >= 3) else raw_pos.x
+	var raw_pos_y = float(raw_pos_arr[1]) if (raw_pos_arr is Array and raw_pos_arr.size() >= 3) else raw_pos.y
+	var raw_pos_z = float(raw_pos_arr[2]) if (raw_pos_arr is Array and raw_pos_arr.size() >= 3) else raw_pos.z
 
-	if not raw_scl.is_equal_approx(new_scale):
-		transform_diff["scale"] = [
-			snapped(new_scale.x, 0.001),
-			snapped(new_scale.y, 0.001),
-			snapped(new_scale.z, 0.001),
-		]
+	var raw_rot_x = float(raw_rot_arr[0]) if (raw_rot_arr is Array and raw_rot_arr.size() >= 3) else raw_rot.x
+	var raw_rot_y = float(raw_rot_arr[1]) if (raw_rot_arr is Array and raw_rot_arr.size() >= 3) else raw_rot.y
+	var raw_rot_z = float(raw_rot_arr[2]) if (raw_rot_arr is Array and raw_rot_arr.size() >= 3) else raw_rot.z
+
+	var raw_scl_x = float(raw_scl_arr[0]) if (raw_scl_arr is Array and raw_scl_arr.size() >= 3) else raw_scl.x
+	var raw_scl_y = float(raw_scl_arr[1]) if (raw_scl_arr is Array and raw_scl_arr.size() >= 3) else raw_scl.y
+	var raw_scl_z = float(raw_scl_arr[2]) if (raw_scl_arr is Array and raw_scl_arr.size() >= 3) else raw_scl.z
+
+	if not is_equal_approx(raw_pos_x, new_pos.x) or not is_equal_approx(raw_pos_y, new_pos.y) or not is_equal_approx(raw_pos_z, new_pos.z):
+		var fx = raw_pos_x if is_equal_approx(raw_pos_x, new_pos.x) else round(new_pos.x * 1000.0) / 1000.0
+		var fy = raw_pos_y if is_equal_approx(raw_pos_y, new_pos.y) else round(new_pos.y * 1000.0) / 1000.0
+		var fz = raw_pos_z if is_equal_approx(raw_pos_z, new_pos.z) else round(new_pos.z * 1000.0) / 1000.0
+		transform_diff["location_meters"] = [fx, fy, fz]
+
+	if not is_equal_approx(raw_rot_x, new_rot_deg.x) or not is_equal_approx(raw_rot_y, new_rot_deg.y) or not is_equal_approx(raw_rot_z, new_rot_deg.z):
+		var rx = raw_rot_x if is_equal_approx(raw_rot_x, new_rot_deg.x) else round(new_rot_deg.x * 1000.0) / 1000.0
+		var ry = raw_rot_y if is_equal_approx(raw_rot_y, new_rot_deg.y) else round(new_rot_deg.y * 1000.0) / 1000.0
+		var rz = raw_rot_z if is_equal_approx(raw_rot_z, new_rot_deg.z) else round(new_rot_deg.z * 1000.0) / 1000.0
+		transform_diff["rotation_degrees"] = [rx, ry, rz]
+
+	if not is_equal_approx(raw_scl_x, new_scale.x) or not is_equal_approx(raw_scl_y, new_scale.y) or not is_equal_approx(raw_scl_z, new_scale.z):
+		var sx = raw_scl_x if is_equal_approx(raw_scl_x, new_scale.x) else round(new_scale.x * 1000.0) / 1000.0
+		var sy = raw_scl_y if is_equal_approx(raw_scl_y, new_scale.y) else round(new_scale.y * 1000.0) / 1000.0
+		var sz = raw_scl_z if is_equal_approx(raw_scl_z, new_scale.z) else round(new_scale.z * 1000.0) / 1000.0
+		transform_diff["scale"] = [sx, sy, sz]
 
 	if transform_diff.is_empty():
 		fix_data["actors"].erase(actor_name)
