@@ -90,9 +90,45 @@ func start_client() -> void:
 	if is_inside_tree():
 		var qn = get_node_or_null("/root/QuanticNet")
 		if qn and qn.has_method("join"):
-			var args = OS.get_cmdline_user_args()
-			var use_netem = "--netem" in args
-			qn.join(DEFAULT_LOCAL_IP, DEFAULT_PORT, DEFAULT_SECRET, use_netem)
+			var user_args = OS.get_cmdline_user_args()
+			var main_args = OS.get_cmdline_args()
+			var combined_args = user_args + main_args
+
+			var use_netem = "--netem" in combined_args
+			var target_ip = DEFAULT_LOCAL_IP
+			var target_port = DEFAULT_PORT
+
+			for i in range(combined_args.size()):
+				if (combined_args[i] == "--connect" or combined_args[i] == "-c") and i + 1 < combined_args.size():
+					var raw_addr = str(combined_args[i + 1])
+					if ":" in raw_addr:
+						var parts = raw_addr.split(":")
+						target_ip = parts[0]
+						target_port = int(parts[1])
+					else:
+						target_ip = raw_addr
+					break
+
+			var config = {
+				"enable_dtls": false,
+			}
+			if not qn.connection_state_changed.is_connected(_on_connection_state_changed):
+				qn.connection_state_changed.connect(_on_connection_state_changed)
+			if not qn.peer_joined.is_connected(_on_peer_joined):
+				qn.peer_joined.connect(_on_peer_joined)
+
+			qn.join(target_ip, target_port, DEFAULT_SECRET, use_netem, config)
+			print("[CLIENT] Tentando conectar ao servidor em %s:%d (Bare-Metal UDP)..." % [target_ip, target_port])
+
+
+func _on_connection_state_changed(state: int) -> void:
+	var qn = get_node_or_null("/root/QuanticNet")
+	var st_name = qn.get_state_string() if qn and qn.has_method("get_state_string") else str(state)
+	print("[CLIENT] Estado da conexao alterado: %s" % st_name)
+
+
+func _on_peer_joined(peer_id: int) -> void:
+	print("[CLIENT] Handshake concluido! Conectado a sessao (Peer ID: %d)." % peer_id)
 
 
 func _calculate_spawn_position() -> Vector3:

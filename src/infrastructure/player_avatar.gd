@@ -113,6 +113,8 @@ var is_local: bool = true
 var peer_id: int = 1
 var is_flying: bool = false
 var is_sprinting: bool = false
+var is_noclip: bool = false
+var speed_hack_multiplier: float = 1.0
 var is_ui_hovered_callback: Callable
 
 var _camera_pivot: Node3D
@@ -220,14 +222,24 @@ func _physics_process(delta: float) -> void:
 	if not is_local:
 		return
 
-	var speed = MOVE_SPEED
+	var speed = MOVE_SPEED * speed_hack_multiplier
 	if is_sprinting:
 		speed *= SPRINT_MULTIPLIER
 
 	var has_ui_focus = (get_viewport() and get_viewport().gui_get_focus_owner() != null)
 
-	# Modo Voo (Fly Mode sem gravidade) vs Modo Terrestre
-	if is_flying:
+	# Modo Voo (Fly Mode sem gravidade) vs Modo Terrestre vs No-Clip
+	if is_noclip:
+		if not has_ui_focus:
+			if Input.is_key_pressed(KEY_E):
+				velocity.y = speed
+			elif Input.is_key_pressed(KEY_Q):
+				velocity.y = -speed
+			else:
+				velocity.y = 0.0
+		else:
+			velocity.y = 0.0
+	elif is_flying:
 		if not has_ui_focus and Input.is_key_pressed(KEY_E):
 			velocity.y = speed
 		elif not has_ui_focus and Input.is_key_pressed(KEY_Q):
@@ -269,11 +281,35 @@ func _physics_process(delta: float) -> void:
 	var horiz_vel = Vector3(velocity.x, 0.0, velocity.z)
 	var was_grounded = is_on_floor()
 
-	move_and_slide()
+	if is_noclip:
+		global_position += velocity * delta
+	else:
+		move_and_slide()
 
-	# Rotina de Stair Stepping (Subida de Degraus e Soleiras de Portas)
-	if was_grounded and horiz_vel.length_squared() > 0.1 and not is_flying:
-		_handle_stair_step_up(horiz_vel, delta)
+		# Rotina de Stair Stepping (Subida de Degraus e Soleiras de Portas)
+		if was_grounded and horiz_vel.length_squared() > 0.1 and not is_flying:
+			_handle_stair_step_up(horiz_vel, delta)
+
+
+func set_speedhack(active: bool, mult: float = 5.0) -> void:
+	speed_hack_multiplier = mult if active else 1.0
+
+
+func set_noclip(active: bool) -> void:
+	is_noclip = active
+	if _col_shape:
+		_col_shape.disabled = active
+
+
+func apply_forced_teleport(forward_dist: float = 30.0) -> void:
+	var yaw = _camera_pivot.global_rotation.y if _camera_pivot else 0.0
+	var forward = Vector3(-sin(yaw), 0.0, -cos(yaw)).normalized()
+	global_position += forward * forward_dist
+
+
+func apply_flyhack(altitude_offset: float = 15.0) -> void:
+	global_position.y += altitude_offset
+	velocity.y = 0.0
 
 
 func _handle_stair_step_up(horiz_vel: Vector3, delta: float) -> void:

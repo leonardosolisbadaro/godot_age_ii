@@ -25,18 +25,18 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
 
 ### 7.2 Conexão Bare-Metal UDP & Handshake sem DTLS (Passo 2)
 
-- [ ] Implementar flag `enable_dtls: bool = false` no QuanticNet e nos orquestradores para permitir conexões UDP bare-metal diretas entre diferentes máquinas e provedores de internet sem restrição de certificados.
-- [ ] Conectar o `ClientOrchestrator` ao `ServerOrchestrator` configurando limite de strikes para testes (`max_strikes = 9999` warnings).
-- [ ] Atualizar métricas de RTT (Ping), Jitter e Packet Loss na janela de Telemetria Técnica (`F2`) via `QuanticNet.pong_received`.
+- [x] Implementar flag `enable_dtls: bool = false` no QuanticNet e nos orquestradores para permitir conexões UDP bare-metal diretas entre diferentes máquinas e provedores de internet sem restrição de certificados.
+- [x] Conectar o `ClientOrchestrator` ao `ServerOrchestrator` configurando limite de strikes para testes (`max_strikes = 9999` warnings).
+- [x] Atualizar métricas de RTT (Ping), Jitter e Packet Loss na janela de Telemetria Técnica (`F2`) via `QuanticNet.pong_received`.
 
 ### 7.3 Janela de Injeção de Hacks no DebugHUD (Passo 3 - Test Harness)
 
-- [ ] Criar janela/menu `Ferramentas > Injetor de Hacks (Debug)` no `DebugHUD`:
+- [x] Criar janela/menu `Ferramentas > Injetor de Hacks (Debug)` no `DebugHUD`:
   - Botão `[Speedhack x5]`: força envio de movimentação com velocidade 5x superior.
   - Botão `[Teleporte Forçado +30m]`: força deslocamento brusco ilegal.
   - Botão `[No-Clip / Entrar na Parede]`: desativa colisão local e tenta mover para dentro de um obstáculo sólido.
   - Botão `[Flyhack +15m]`: tenta andar no ar sem sustentação de terreno.
-- [ ] Exibir notificação visual/contador de Snapbacks no HUD confirmando a interceptação e correção pelo servidor em tempo real.
+- [x] Exibir notificação visual/contador de Snapbacks no HUD confirmando a interceptação e correção pelo servidor em tempo real.
 
 ### 7.4 Simulação State-Based Autoritativa com Baixíssimo Custo de CPU (Passo 4)
 

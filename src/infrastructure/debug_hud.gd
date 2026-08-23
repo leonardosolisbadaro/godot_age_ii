@@ -61,6 +61,11 @@ signal water_volume_fix_saved(chunk_name: String, volume_name: String, data: Dic
 signal water_volume_reset_requested(chunk_name: String, volume_name: String)
 signal water_volumes_refresh_requested(chunk_name: String)
 
+signal speedhack_toggled(active: bool)
+signal force_teleport_requested(forward_distance: float)
+signal noclip_toggled(active: bool)
+signal flyhack_requested(altitude_offset: float)
+
 # ==============================================================================
 # CONSTANTES DE DESIGN E TEMA SÓLIDO
 # ==============================================================================
@@ -157,6 +162,17 @@ var _teleports_list: ItemList
 var _input_bookmark_name: LineEdit
 var _raw_teleports: Array = []
 
+var _hack_injector_window: PanelContainer
+var _btn_hack_speed: Button
+var _btn_hack_teleport: Button
+var _btn_hack_noclip: Button
+var _btn_hack_fly: Button
+var _label_snapback_stats: Label
+var _snapback_count: int = 0
+var _last_snapback_reason: String = "Nenhum"
+var _speedhack_active: bool = false
+var _noclip_active: bool = false
+
 # Variáveis de Estado para Arrastar Janelas (Drag & Drop)
 var _dragging_window: Control = null
 var _drag_mouse_offset: Vector2 = Vector2.ZERO
@@ -186,6 +202,9 @@ func _setup_ui() -> void:
 
 	# 6. Janela Flutuante: Telemetria Completa (F2)
 	_setup_telemetry_window()
+
+	# 7. Janela Flutuante: Injetor de Hacks (Test Harness)
+	_setup_hack_injector_window()
 
 # ==============================================================================
 # HELPERS DE ESTILIZAÇÃO SÓLIDA (THEMING)
@@ -338,6 +357,7 @@ func _setup_top_menu_bar() -> void:
 	_menu_tools = MenuButton.new()
 	_menu_tools.text = "Ferramentas"
 	_menu_tools.get_popup().add_item("Teleportes Rapidos", 1)
+	_menu_tools.get_popup().add_item("Injetor de Hacks (Debug)", 4)
 	_menu_tools.get_popup().add_separator()
 	_menu_tools.get_popup().add_item("Alternar Modo Voo (G)", 3)
 	_menu_tools.get_popup().id_pressed.connect(_on_tools_menu_pressed)
@@ -385,6 +405,8 @@ func _on_tools_menu_pressed(id: int) -> void:
 		3:
 			# Dispara evento simulando tecla G se necessario
 			pass
+		4:
+			toggle_hack_injector_window()
 
 # ==============================================================================
 # FABRICA DE JANELAS FLUTUANTES ARRASTAVEIS (VISUAL SOLIDO)
@@ -1160,6 +1182,110 @@ func _setup_telemetry_window() -> void:
 	_telemetry_window.visible = false
 
 # ==============================================================================
+# JANELA 6: INJETOR DE HACKS / TEST HARNESS ANTI-CHEAT
+# ==============================================================================
+
+
+func _setup_hack_injector_window() -> void:
+	var frame = _create_window_frame(
+		"HackInjectorWindow",
+		"Injetor de Hacks (Test Harness)",
+		Rect2(20.0, 480.0, 440.0, 270.0),
+		func():
+			_hack_injector_window.visible = false,
+	)
+	_hack_injector_window = frame["window"]
+	var vbox: VBoxContainer = frame["body"]
+	_hack_injector_window.visible = false
+
+	var lbl_desc = Label.new()
+	lbl_desc.text = "Injecao controlada de anomalias para auditoria de autoridade:"
+	lbl_desc.modulate = COLOR_TEXT_MUTED
+	vbox.add_child(lbl_desc)
+
+	# Grid de Botões de Ação
+	var grid = GridContainer.new()
+	grid.columns = 2
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	vbox.add_child(grid)
+
+	_btn_hack_speed = Button.new()
+	_btn_hack_speed.text = "Speedhack x5 [OFF]"
+	_btn_hack_speed.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_btn_hack_speed.pressed.connect(_on_btn_hack_speed_pressed)
+	_style_button(_btn_hack_speed)
+	grid.add_child(_btn_hack_speed)
+
+	_btn_hack_teleport = Button.new()
+	_btn_hack_teleport.text = "Teleporte (+30m)"
+	_btn_hack_teleport.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_btn_hack_teleport.pressed.connect(_on_btn_hack_teleport_pressed)
+	_style_button(_btn_hack_teleport)
+	grid.add_child(_btn_hack_teleport)
+
+	_btn_hack_noclip = Button.new()
+	_btn_hack_noclip.text = "No-Clip [OFF]"
+	_btn_hack_noclip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_btn_hack_noclip.pressed.connect(_on_btn_hack_noclip_pressed)
+	_style_button(_btn_hack_noclip)
+	grid.add_child(_btn_hack_noclip)
+
+	_btn_hack_fly = Button.new()
+	_btn_hack_fly.text = "Flyhack (+15m)"
+	_btn_hack_fly.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_btn_hack_fly.pressed.connect(_on_btn_hack_fly_pressed)
+	_style_button(_btn_hack_fly)
+	grid.add_child(_btn_hack_fly)
+
+	var sep = HSeparator.new()
+	vbox.add_child(sep)
+
+	# Painel de Resumo de Interceptações (Snapbacks)
+	_label_snapback_stats = Label.new()
+	_label_snapback_stats.text = "Snapbacks Interceptados: 0\nUltimo Motivo: Nenhum\nStatus Anti-Cheat: Monitorando autoridade"
+	_label_snapback_stats.modulate = COLOR_TEXT_ACCENT
+	vbox.add_child(_label_snapback_stats)
+
+
+func _on_btn_hack_speed_pressed() -> void:
+	_speedhack_active = not _speedhack_active
+	if _btn_hack_speed:
+		_btn_hack_speed.text = "Speedhack x5 [ON]" if _speedhack_active else "Speedhack x5 [OFF]"
+		_btn_hack_speed.modulate = COLOR_TEXT_WARN if _speedhack_active else Color.WHITE
+	speedhack_toggled.emit(_speedhack_active)
+
+
+func _on_btn_hack_teleport_pressed() -> void:
+	force_teleport_requested.emit(30.0)
+
+
+func _on_btn_hack_noclip_pressed() -> void:
+	_noclip_active = not _noclip_active
+	if _btn_hack_noclip:
+		_btn_hack_noclip.text = "No-Clip [ON]" if _noclip_active else "No-Clip [OFF]"
+		_btn_hack_noclip.modulate = COLOR_TEXT_WARN if _noclip_active else Color.WHITE
+	noclip_toggled.emit(_noclip_active)
+
+
+func _on_btn_hack_fly_pressed() -> void:
+	flyhack_requested.emit(15.0)
+
+
+func increment_snapback_counter(reason: String = "") -> void:
+	_snapback_count += 1
+	if not reason.is_empty():
+		_last_snapback_reason = reason
+	if _label_snapback_stats:
+		_label_snapback_stats.text = "Snapbacks Interceptados: %d\nUltimo Motivo: %s\nStatus Anti-Cheat: Correcao aplicada pelo servidor!" % [
+			_snapback_count,
+			_last_snapback_reason,
+		]
+		_label_snapback_stats.modulate = COLOR_TEXT_WARN
+
+
+# ==============================================================================
 # GERENCIAMENTO E CONTROLE DE VISIBILIDADE EM CASCATA (ESC)
 # ==============================================================================
 
@@ -1171,6 +1297,9 @@ func close_topmost_window() -> bool:
 		return true
 	if _water_editor_window and _water_editor_window.visible:
 		_water_editor_window.visible = false
+		return true
+	if _hack_injector_window and _hack_injector_window.visible:
+		_hack_injector_window.visible = false
 		return true
 	if _teleports_window and _teleports_window.visible:
 		_teleports_window.visible = false
@@ -1217,6 +1346,13 @@ func toggle_telemetry_window() -> void:
 			_telemetry_window.move_to_front()
 
 
+func toggle_hack_injector_window() -> void:
+	if _hack_injector_window:
+		_hack_injector_window.visible = not _hack_injector_window.visible
+		if _hack_injector_window.visible:
+			_hack_injector_window.move_to_front()
+
+
 func is_actor_inspector_open() -> bool:
 	return (
 		(_outliner_window and _outliner_window.visible)
@@ -1240,6 +1376,7 @@ func is_mouse_over_ui() -> bool:
 		_water_editor_window,
 		_teleports_window,
 		_telemetry_window,
+		_hack_injector_window,
 	]
 	for w in wins:
 		if w and w.visible and w.get_global_rect().has_point(m_pos):
@@ -1307,6 +1444,8 @@ func update_telemetry(
 
 		var net_status = net_stats.get("status", "Modo Editor / Standalone")
 		var ping_ms = net_stats.get("ping_ms", 0.0)
+		var avg_ping_ms = net_stats.get("avg_ping_ms", 0.0)
+		var loss_pct = net_stats.get("loss_pct", 0.0)
 		var net_in_kb = net_stats.get("rx_kbps", 0.0)
 		var net_out_kb = net_stats.get("tx_kbps", 0.0)
 
@@ -1337,9 +1476,12 @@ func update_telemetry(
 			+ "  Cena Godot:     %d nos vivos | %d recursos carregados\n"
 			% [nodes_count, resources_count]
 			+ "  Pares Colisao:  %d pares ativos no servidor 3D\n\n" % col_pairs
-			+ "=== REDE (QuanticNet) ===\n" + "  Status Sessao:  %s\n" % net_status
-			+ "  Latencia / RTT: %.1f ms | Trafego: d %.1f KB/s | u %.1f KB/s\n"
-			% [ping_ms, net_in_kb, net_out_kb]
+			+ "=== REDE (QuanticNet) - Bare-Metal UDP ===\n"
+			+ "  Status Sessao:  %s\n" % net_status
+			+ "  Latencia (RTT): Atual: %.1f ms | Media: %.1f ms | Perda: %.1f%%\n"
+			% [ping_ms, avg_ping_ms, loss_pct]
+			+ "  Trafego Rede:   ↓ %.1f KB/s | ↑ %.1f KB/s\n"
+			% [net_in_kb, net_out_kb]
 			+ "---------------------------------------------------\n"
 			+ "[F2] Telemetria  | [F3] Wireframe  | [F4] Outliner  | [G] Voo  | [ESC] Sair"
 		)

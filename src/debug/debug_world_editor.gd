@@ -14,7 +14,9 @@ extends Node
 
 const DebugHUDClass = preload("res://src/infrastructure/debug_hud.gd")
 const RadiusGizmoNodeClass = preload("res://src/infrastructure/radius_gizmo_node.gd")
-const MeshSelectionHighlighterClass = preload("res://src/infrastructure/mesh_selection_highlighter.gd")
+const MeshSelectionHighlighterClass = preload(
+	"res://src/infrastructure/mesh_selection_highlighter.gd"
+)
 const ChunkResourceAdapterClass = preload("res://src/adapters/chunk_resource_adapter.gd")
 
 # Constantes de Depuração
@@ -44,7 +46,7 @@ var _current_chunk_name: String = ""
 func setup(
 	p_chunk_mgr: Node3D,
 	p_player: CharacterBody3D,
-	p_dir_light: DirectionalLight3D = null
+	p_dir_light: DirectionalLight3D = null,
 ) -> void:
 	world_chunk_manager = p_chunk_mgr
 	local_player = p_player
@@ -75,7 +77,20 @@ func setup(
 	_debug_hud.water_volume_reset_requested.connect(_on_water_volume_reset_requested)
 	_debug_hud.water_volumes_refresh_requested.connect(_on_water_volumes_refresh_requested)
 
+	# Sinais do Injetor de Hacks (Test Harness)
+	_debug_hud.speedhack_toggled.connect(_on_speedhack_toggled)
+	_debug_hud.force_teleport_requested.connect(_on_force_teleport_requested)
+	_debug_hud.noclip_toggled.connect(_on_noclip_toggled)
+	_debug_hud.flyhack_requested.connect(_on_flyhack_requested)
+
 	add_child(_debug_hud)
+
+	# Conexão com Snapbacks do QuanticNet
+	if is_inside_tree():
+		var qn = get_node_or_null("/root/QuanticNet")
+		if qn and qn.has_signal("snapback_received"):
+			if not qn.snapback_received.is_connected(_on_snapback_received):
+				qn.snapback_received.connect(_on_snapback_received)
 
 	if local_player:
 		local_player.is_ui_hovered_callback = _debug_hud.is_mouse_over_ui
@@ -100,12 +115,40 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# Atualiza telemetria no HUD
-	var alt_res = world_chunk_manager.sample_world_altitude(local_player.position.x, local_player.position.z)
+	var alt_res = world_chunk_manager.sample_world_altitude(
+		local_player.position.x,
+		local_player.position.z,
+	)
 	var active_chunk = alt_res.get("chunk_name", "")
 	var alt_val = alt_res.get("altitude", 0.0)
 	var is_flying = local_player.get("is_flying") if "is_flying" in local_player else false
-	var stream_stats = world_chunk_manager.get_streaming_stats() if world_chunk_manager.has_method("get_streaming_stats") else { }
-	_debug_hud.update_telemetry(local_player.position, active_chunk, _wireframe_active, alt_val, is_flying, stream_stats)
+	var stream_stats = world_chunk_manager.get_streaming_stats() if world_chunk_manager.has_method(
+		"get_streaming_stats"
+	) else { }
+
+	var net_stats = { }
+	if is_inside_tree():
+		var qn = get_node_or_null("/root/QuanticNet")
+		if qn:
+			var st_str = qn.get_state_string() if qn.has_method("get_state_string") else "Desconhecido"
+			var t_dict = qn.get_telemetry_dict() if qn.has_method("get_telemetry_dict") else { }
+			var my_id = qn.get_local_peer_id() if qn.has_method("get_local_peer_id") else 0
+			net_stats = {
+				"status": "%s (Peer ID: %d)" % [st_str, my_id],
+				"ping_ms": t_dict.get("rtt_ms", 0.0),
+				"avg_ping_ms": t_dict.get("avg_rtt_ms", 0.0),
+				"loss_pct": t_dict.get("loss_pct", 0.0),
+			}
+
+	_debug_hud.update_telemetry(
+		local_player.position,
+		active_chunk,
+		_wireframe_active,
+		alt_val,
+		is_flying,
+		stream_stats,
+		net_stats,
+	)
 
 	if not active_chunk.is_empty() and active_chunk != _current_chunk_name:
 		_current_chunk_name = active_chunk
@@ -123,7 +166,10 @@ func _physics_process(delta: float) -> void:
 		_inspector_timer += delta
 		if _inspector_timer >= INSPECTOR_UPDATE_INTERVAL_SEC:
 			_inspector_timer = 0.0
-			var nearby = world_chunk_manager.get_static_actors_in_radius(local_player.position, _inspector_radius)
+			var nearby = world_chunk_manager.get_static_actors_in_radius(
+				local_player.position,
+				_inspector_radius,
+			)
 			_debug_hud.update_nearby_actors(nearby, _inspector_radius)
 			_refresh_pending_hud_summary()
 
@@ -186,14 +232,36 @@ func _unhandled_input(event: InputEvent) -> void:
 
 				if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 					cur_rot.y = fmod(cur_rot.y + 15.0, 360.0)
-					_on_actor_transform_applied(_selected_actor_name, cur_pos, cur_rot, cur_sc, _selected_actor_chunk)
-					_debug_hud.set_editor_values(cur_pos, cur_rot, cur_sc, "Rotacao aplicada (+15°)")
+					_on_actor_transform_applied(
+						_selected_actor_name,
+						cur_pos,
+						cur_rot,
+						cur_sc,
+						_selected_actor_chunk,
+					)
+					_debug_hud.set_editor_values(
+						cur_pos,
+						cur_rot,
+						cur_sc,
+						"Rotacao aplicada (+15°)",
+					)
 					get_viewport().set_input_as_handled()
 					return
 				elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 					cur_rot.y = fmod(cur_rot.y - 15.0, 360.0)
-					_on_actor_transform_applied(_selected_actor_name, cur_pos, cur_rot, cur_sc, _selected_actor_chunk)
-					_debug_hud.set_editor_values(cur_pos, cur_rot, cur_sc, "Rotacao aplicada (-15°)")
+					_on_actor_transform_applied(
+						_selected_actor_name,
+						cur_pos,
+						cur_rot,
+						cur_sc,
+						_selected_actor_chunk,
+					)
+					_debug_hud.set_editor_values(
+						cur_pos,
+						cur_rot,
+						cur_sc,
+						"Rotacao aplicada (-15°)",
+					)
 					get_viewport().set_input_as_handled()
 					return
 
@@ -207,14 +275,36 @@ func _unhandled_input(event: InputEvent) -> void:
 
 				if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 					cur_pos.y = round((cur_pos.y + step_y) * 1000.0) / 1000.0
-					_on_actor_transform_applied(_selected_actor_name, cur_pos, cur_rot, cur_sc, _selected_actor_chunk)
-					_debug_hud.set_editor_values(cur_pos, cur_rot, cur_sc, "Elevacao ajustada (+0.10m)")
+					_on_actor_transform_applied(
+						_selected_actor_name,
+						cur_pos,
+						cur_rot,
+						cur_sc,
+						_selected_actor_chunk,
+					)
+					_debug_hud.set_editor_values(
+						cur_pos,
+						cur_rot,
+						cur_sc,
+						"Elevacao ajustada (+0.10m)",
+					)
 					get_viewport().set_input_as_handled()
 					return
 				elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 					cur_pos.y = round((cur_pos.y - step_y) * 1000.0) / 1000.0
-					_on_actor_transform_applied(_selected_actor_name, cur_pos, cur_rot, cur_sc, _selected_actor_chunk)
-					_debug_hud.set_editor_values(cur_pos, cur_rot, cur_sc, "Elevacao ajustada (-0.10m)")
+					_on_actor_transform_applied(
+						_selected_actor_name,
+						cur_pos,
+						cur_rot,
+						cur_sc,
+						_selected_actor_chunk,
+					)
+					_debug_hud.set_editor_values(
+						cur_pos,
+						cur_rot,
+						cur_sc,
+						"Elevacao ajustada (-0.10m)",
+					)
 					get_viewport().set_input_as_handled()
 					return
 
@@ -224,8 +314,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				_inspector_radius = clampf(_inspector_radius + 5.0, 5.0, 100.0)
 				if _radius_gizmo:
 					_radius_gizmo.set_radius(_inspector_radius)
-				if _debug_hud and _debug_hud.is_actor_inspector_open() and local_player and world_chunk_manager:
-					var nearby = world_chunk_manager.get_static_actors_in_radius(local_player.position, _inspector_radius)
+				if (
+					_debug_hud and _debug_hud.is_actor_inspector_open()
+					and local_player and world_chunk_manager
+				):
+					var nearby = world_chunk_manager.get_static_actors_in_radius(
+						local_player.position,
+						_inspector_radius,
+					)
 					_debug_hud.update_nearby_actors(nearby, _inspector_radius)
 				get_viewport().set_input_as_handled()
 				return
@@ -233,14 +329,23 @@ func _unhandled_input(event: InputEvent) -> void:
 				_inspector_radius = clampf(_inspector_radius - 5.0, 5.0, 100.0)
 				if _radius_gizmo:
 					_radius_gizmo.set_radius(_inspector_radius)
-				if _debug_hud and _debug_hud.is_actor_inspector_open() and local_player and world_chunk_manager:
-					var nearby = world_chunk_manager.get_static_actors_in_radius(local_player.position, _inspector_radius)
+				if (
+					_debug_hud and _debug_hud.is_actor_inspector_open()
+					and local_player and world_chunk_manager
+				):
+					var nearby = world_chunk_manager.get_static_actors_in_radius(
+						local_player.position,
+						_inspector_radius,
+					)
 					_debug_hud.update_nearby_actors(nearby, _inspector_radius)
 				get_viewport().set_input_as_handled()
 				return
 
 	# 3. Arrasto Livre de Ator no Relevo com Shift + Botão Esquerdo do Mouse Pressionado
-	if event is InputEventMouseMotion and event.shift_pressed and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+	if (
+		event is InputEventMouseMotion and event.shift_pressed
+		and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	):
 		if not _selected_actor_name.is_empty() and _debug_hud and world_chunk_manager:
 			var camera = get_viewport().get_camera_3d()
 			if not camera:
@@ -264,8 +369,14 @@ func _unhandled_input(event: InputEvent) -> void:
 
 				if not _is_dragging_actor:
 					_is_dragging_actor = true
-					var initial_ground_res = world_chunk_manager.sample_world_altitude(cur_pos.x, cur_pos.z)
-					var initial_ground_y = initial_ground_res.get("altitude", cur_pos.y) if initial_ground_res.get("found", false) else cur_pos.y
+					var initial_ground_res = world_chunk_manager.sample_world_altitude(
+						cur_pos.x,
+						cur_pos.z,
+					)
+					var initial_ground_y = initial_ground_res.get("altitude", cur_pos.y) if initial_ground_res.get(
+						"found",
+						false,
+					) else cur_pos.y
 					_drag_height_offset = cur_pos.y - initial_ground_y
 
 				var target_y = ground_y + _drag_height_offset
@@ -291,10 +402,10 @@ func _unhandled_input(event: InputEvent) -> void:
 					"Arrastando ator (ancorado ao solo)...",
 				)
 
-
 # ==============================================================================
 # MANIPULAÇÃO DE ATORES E CALLBACKS DO HUD
 # ==============================================================================
+
 
 func _on_actor_selected_in_hud(actor_dict: Dictionary) -> void:
 	_selected_actor_name = actor_dict.get("actor_name", "")
@@ -326,7 +437,13 @@ func _on_actor_transform_applied(
 	if not world_chunk_manager:
 		return
 	var target_chunk = chunk_name if not chunk_name.is_empty() else _selected_actor_chunk
-	var res = world_chunk_manager.update_static_actor_transform(actor_name, pos, rot_deg, sc, target_chunk)
+	var res = world_chunk_manager.update_static_actor_transform(
+		actor_name,
+		pos,
+		rot_deg,
+		sc,
+		target_chunk,
+	)
 	if res.get("found", false) and _mesh_selection_highlighter:
 		var mesh = res.get("mesh", null)
 		var xform = res.get("transform", Transform3D.IDENTITY)
@@ -352,9 +469,15 @@ func _on_actor_fix_saved(
 	var success = world_chunk_manager.save_actor_fix(actor_name, pos, rot_deg, sc, target_chunk)
 	if success:
 		_refresh_pending_hud_summary()
-		print("[DEBUG] chunk_static_actors_fix.json salvo com sucesso para ator '%s' [%s]." % [actor_name, target_chunk])
+		print(
+			"[DEBUG] chunk_static_actors_fix.json salvo com sucesso para ator '%s' [%s]."
+			% [actor_name, target_chunk]
+		)
 	else:
-		print("[DEBUG] Falha ao salvar chunk_static_actors_fix.json para ator '%s' [%s]." % [actor_name, target_chunk])
+		print(
+			"[DEBUG] Falha ao salvar chunk_static_actors_fix.json para ator '%s' [%s]."
+			% [actor_name, target_chunk]
+		)
 
 
 func _on_actor_reset_requested(actor_name: String, chunk_name: String = "") -> void:
@@ -380,7 +503,9 @@ func _on_actor_reset_requested(actor_name: String, chunk_name: String = "") -> v
 				raw_sc,
 				"Valores restaurados para o original!",
 			)
-		print("[DEBUG] Ator '%s' [%s] resetado para valores originais." % [actor_name, target_chunk])
+		print(
+			"[DEBUG] Ator '%s' [%s] resetado para valores originais." % [actor_name, target_chunk]
+		)
 
 
 func _refresh_pending_hud_summary() -> void:
@@ -406,7 +531,10 @@ func _on_batch_save_requested() -> void:
 		var cur_sc = _debug_hud.get_current_scale()
 		_debug_hud.set_editor_values(cur_pos, cur_rot, cur_sc, msg)
 		if _debug_hud.is_actor_inspector_open() and local_player:
-			var nearby = world_chunk_manager.get_static_actors_in_radius(local_player.position, _inspector_radius)
+			var nearby = world_chunk_manager.get_static_actors_in_radius(
+				local_player.position,
+				_inspector_radius,
+			)
 			_debug_hud.update_nearby_actors(nearby, _inspector_radius)
 
 
@@ -419,16 +547,22 @@ func _on_batch_discard_requested() -> void:
 	_refresh_pending_hud_summary()
 	if _debug_hud:
 		if not _selected_actor_name.is_empty():
-			var raw = world_chunk_manager.get_raw_actor_data(_selected_actor_name, _selected_actor_chunk)
+			var raw = world_chunk_manager.get_raw_actor_data(
+				_selected_actor_name,
+				_selected_actor_chunk,
+			)
 			if not raw.is_empty():
 				_debug_hud.set_editor_values(
 					raw.get("position", Vector3.ZERO),
 					raw.get("rotation_degrees", Vector3.ZERO),
 					raw.get("scale", Vector3.ONE),
-					msg
+					msg,
 				)
 		if _debug_hud.is_actor_inspector_open() and local_player:
-			var nearby = world_chunk_manager.get_static_actors_in_radius(local_player.position, _inspector_radius)
+			var nearby = world_chunk_manager.get_static_actors_in_radius(
+				local_player.position,
+				_inspector_radius,
+			)
 			_debug_hud.update_nearby_actors(nearby, _inspector_radius)
 
 
@@ -442,9 +576,16 @@ func _on_actor_collision_changed(
 	if not world_chunk_manager:
 		return
 	var target_chunk = chunk_name if not chunk_name.is_empty() else _selected_actor_chunk
-	var success = world_chunk_manager.update_actor_collision_type(actor_name, new_type, target_chunk)
+	var success = world_chunk_manager.update_actor_collision_type(
+		actor_name,
+		new_type,
+		target_chunk,
+	)
 	if success:
-		print("[DEBUG] Colisor do ator '%s' [%s] alterado dinamicamente para %s." % [actor_name, target_chunk, new_type.to_upper()])
+		print(
+			"[DEBUG] Colisor do ator '%s' [%s] alterado dinamicamente para %s."
+			% [actor_name, target_chunk, new_type.to_upper()]
+		)
 		var tree = get_tree()
 		if tree and tree.debug_collisions_hint:
 			_refresh_collision_shapes_recursive(tree.root)
@@ -457,16 +598,23 @@ func _on_actor_collision_save_requested(
 ) -> void:
 	if not world_chunk_manager:
 		return
-	var success = world_chunk_manager.save_collision_rule_override(package_name, mesh_name, collision_type)
+	var success = world_chunk_manager.save_collision_rule_override(
+		package_name,
+		mesh_name,
+		collision_type,
+	)
 	if success:
-		print("[DEBUG] Regra de colisão salva com sucesso em static_mesh_collision_rules.json para '%s.%s' -> %s." % [package_name, mesh_name, collision_type])
+		print(
+			"[DEBUG] Regra de colisão salva com sucesso em static_mesh_collision_rules.json para '%s.%s' -> %s."
+			% [package_name, mesh_name, collision_type]
+		)
 	else:
 		print("[DEBUG] Falha ao salvar regra de colisão para '%s.%s'." % [package_name, mesh_name])
-
 
 # ==============================================================================
 # TELEPORTES E CONTROLES DA TOP BAR
 # ==============================================================================
+
 
 func _on_teleport_requested(target_pos: Vector3) -> void:
 	if not local_player:
@@ -475,7 +623,10 @@ func _on_teleport_requested(target_pos: Vector3) -> void:
 	local_player.velocity = Vector3.ZERO
 	if world_chunk_manager:
 		world_chunk_manager.update_streaming(target_pos, false)
-	print("[DEBUG] Teleporte executado para: (%.1f, %.1f, %.1f)" % [target_pos.x, target_pos.y, target_pos.z])
+	print(
+		"[DEBUG] Teleporte executado para: (%.1f, %.1f, %.1f)"
+		% [target_pos.x, target_pos.y, target_pos.z]
+	)
 
 
 func _on_bookmark_save_requested(b_name: String, b_pos: Vector3, b_chunk: String) -> void:
@@ -492,7 +643,10 @@ func _on_radius_changed(new_r: float) -> void:
 	if _radius_gizmo:
 		_radius_gizmo.set_radius(new_r)
 	if world_chunk_manager and local_player:
-		var nearby = world_chunk_manager.get_static_actors_in_radius(local_player.position, _inspector_radius)
+		var nearby = world_chunk_manager.get_static_actors_in_radius(
+			local_player.position,
+			_inspector_radius,
+		)
 		if _debug_hud:
 			_debug_hud.update_nearby_actors(nearby, _inspector_radius)
 
@@ -510,13 +664,19 @@ func _toggle_debug_collisions() -> void:
 		return
 	tree.debug_collisions_hint = not tree.debug_collisions_hint
 	_refresh_collision_shapes_recursive(tree.root)
-	print("[DEBUG] Visualização de Colisores de Física: ", "LIGADA" if tree.debug_collisions_hint else "DESLIGADA")
+	print(
+		"[DEBUG] Visualização de Colisores de Física: ",
+		"LIGADA" if tree.debug_collisions_hint else "DESLIGADA",
+	)
 
 
 func _toggle_shadows() -> void:
 	if directional_light:
 		directional_light.shadow_enabled = not directional_light.shadow_enabled
-		print("[DEBUG] Sombras Direcionais: ", "ATIVADAS" if directional_light.shadow_enabled else "DESATIVADAS")
+		print(
+			"[DEBUG] Sombras Direcionais: ",
+			"ATIVADAS" if directional_light.shadow_enabled else "DESATIVADAS",
+		)
 
 
 func _refresh_collision_shapes_recursive(node: Node) -> void:
@@ -543,7 +703,10 @@ func _on_water_volume_fix_saved(chunk_name: String, volume_name: String, data: D
 		return
 	var success = world_chunk_manager.save_single_water_volume_fix(chunk_name, volume_name, data)
 	if success:
-		print("[DEBUG] water_volumes_fix.json salvo com sucesso para chunk '%s' (volume: %s)." % [chunk_name, volume_name])
+		print(
+			"[DEBUG] water_volumes_fix.json salvo com sucesso para chunk '%s' (volume: %s)."
+			% [chunk_name, volume_name]
+		)
 
 
 func _on_water_volume_reset_requested(chunk_name: String, volume_name: String) -> void:
@@ -553,7 +716,10 @@ func _on_water_volume_reset_requested(chunk_name: String, volume_name: String) -
 	if _debug_hud and not raw_data.is_empty():
 		var all_vols = world_chunk_manager.get_chunk_water_volumes(chunk_name)
 		_debug_hud.populate_water_volumes(chunk_name, all_vols)
-	print("[DEBUG] Volume de agua '%s' [%s] resetado para os valores originais." % [volume_name, chunk_name])
+	print(
+		"[DEBUG] Volume de agua '%s' [%s] resetado para os valores originais."
+		% [volume_name, chunk_name]
+	)
 
 
 func _on_water_volumes_refresh_requested(chunk_name: String) -> void:
@@ -563,3 +729,35 @@ func _on_water_volumes_refresh_requested(chunk_name: String) -> void:
 	var water_data = world_chunk_manager.get_chunk_water_volumes(target_chunk)
 	_debug_hud.populate_water_volumes(target_chunk, water_data)
 
+
+func _on_speedhack_toggled(active: bool) -> void:
+	if local_player and local_player.has_method("set_speedhack"):
+		local_player.set_speedhack(active, 5.0)
+		print("[HACK TEST] Speedhack 5x: ", "ATIVADO" if active else "DESATIVADO")
+
+
+func _on_force_teleport_requested(forward_dist: float) -> void:
+	if local_player and local_player.has_method("apply_forced_teleport"):
+		local_player.apply_forced_teleport(forward_dist)
+		print("[HACK TEST] Teleporte Forçado disparado: +%.1fm para frente." % forward_dist)
+
+
+func _on_noclip_toggled(active: bool) -> void:
+	if local_player and local_player.has_method("set_noclip"):
+		local_player.set_noclip(active)
+		print("[HACK TEST] No-Clip: ", "ATIVADO (Colisao desligada)" if active else "DESATIVADO")
+
+
+func _on_flyhack_requested(altitude_offset: float) -> void:
+	if local_player and local_player.has_method("apply_flyhack"):
+		local_player.apply_flyhack(altitude_offset)
+		print("[HACK TEST] Flyhack disparado: +%.1fm vertical." % altitude_offset)
+
+
+func _on_snapback_received(seq: int, _pos: Vector3, _rot: Vector3, reason: int, _replay: Array) -> void:
+	var reason_str = "Violacao de Velocidade" if reason == 1 else (
+		"Violacao de Obstaculo/NavMesh" if reason == 2 else "Violacao de Altitude Solo"
+	)
+	if _debug_hud and _debug_hud.has_method("increment_snapback_counter"):
+		_debug_hud.increment_snapback_counter("Seq #%d (%s)" % [seq, reason_str])
+	print("[ANTI-CHEAT] Snapback recebido do servidor! Seq: %d | Motivo: %s" % [seq, reason_str])

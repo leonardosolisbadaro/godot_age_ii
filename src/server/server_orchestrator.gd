@@ -49,10 +49,35 @@ func start_server() -> void:
 		if qn and qn.has_method("host"):
 			var args = OS.get_cmdline_user_args()
 			var use_netem = "--netem" in args
-			qn.host(DEFAULT_PORT, DEFAULT_SECRET, "*", DEFAULT_MAX_PLAYERS, { "use_netem": use_netem })
-			print("[SERVER] QuanticNet host iniciado na porta %d." % DEFAULT_PORT)
+			var config = {
+				"use_netem": use_netem,
+				"enable_dtls": false,
+				"max_strikes": 9999,
+				"world_bounds": 100000.0,
+				"hard_cap": 250.0,
+				"max_speed": 15.0,
+			}
+			if not qn.peer_joined.is_connected(_on_peer_joined):
+				qn.peer_joined.connect(_on_peer_joined)
+			if not qn.peer_left.is_connected(_on_peer_left):
+				qn.peer_left.connect(_on_peer_left)
+
+			qn.host(DEFAULT_PORT, DEFAULT_SECRET, "*", DEFAULT_MAX_PLAYERS, config)
+			print("[SERVER] QuanticNet host iniciado na porta %d (Bare-Metal UDP, max_strikes=9999)." % DEFAULT_PORT)
 	else:
 		print("[SERVER] Modo Standalone ativo (fora da árvore de cena).")
+
+
+func _on_peer_joined(peer_id: int) -> void:
+	print("[SERVER] Novo cliente conectado com sucesso! (Peer ID: %d)" % peer_id)
+	if _server_adapter and _server_adapter.has_method("register_peer"):
+		_server_adapter.register_peer(peer_id)
+
+
+func _on_peer_left(peer_id: int) -> void:
+	print("[SERVER] Cliente desconectado. (Peer ID: %d)" % peer_id)
+	if _server_adapter and _server_adapter.has_method("unregister_peer"):
+		_server_adapter.unregister_peer(peer_id)
 
 
 func get_server_world() -> RefCounted:
