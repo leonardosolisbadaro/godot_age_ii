@@ -18,16 +18,19 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
 ## Fase 7: NavMesh, Netcode Autoritativo com Mínimo Custo de CPU & Test Harness de Hacks
 
 ### 7.1 Geração e Integração da NavMesh Definitiva do Servidor (Passo 1)
+
 - [x] Criar ferramenta CLI de compilação offline `tools/bake_navmesh.py` e script de motor `src/infrastructure/bake_navmesh.gd` que combina a geometria do terreno (`heightfield.bin` sem quads de caverna) e os colisores simplificados de todas as StaticMeshes de cada chunk em `assets/maps/<chunk>/server/navmesh.res`.
 - [x] Carregar a `navmesh.res` de cada chunk ativo no servidor dedicado (`ServerWorldManager`) para consultas instantâneas $O(1)$ de navegabilidade e rotas $A^*$.
 - [x] Suporte a validação de pontos navegáveis em rampas, pontes e desvio automático de construções, muralhas e árvores sem custo de CPU em tempo real.
 
 ### 7.2 Conexão Bare-Metal UDP & Handshake sem DTLS (Passo 2)
+
 - [ ] Implementar flag `enable_dtls: bool = false` no QuanticNet e nos orquestradores para permitir conexões UDP bare-metal diretas entre diferentes máquinas e provedores de internet sem restrição de certificados.
 - [ ] Conectar o `ClientOrchestrator` ao `ServerOrchestrator` configurando limite de strikes para testes (`max_strikes = 9999` warnings).
 - [ ] Atualizar métricas de RTT (Ping), Jitter e Packet Loss na janela de Telemetria Técnica (`F2`) via `QuanticNet.pong_received`.
 
 ### 7.3 Janela de Injeção de Hacks no DebugHUD (Passo 3 - Test Harness)
+
 - [ ] Criar janela/menu `Ferramentas > Injetor de Hacks (Debug)` no `DebugHUD`:
   - Botão `[Speedhack x5]`: força envio de movimentação com velocidade 5x superior.
   - Botão `[Teleporte Forçado +30m]`: força deslocamento brusco ilegal.
@@ -36,6 +39,7 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
 - [ ] Exibir notificação visual/contador de Snapbacks no HUD confirmando a interceptação e correção pelo servidor em tempo real.
 
 ### 7.4 Simulação State-Based Autoritativa com Baixíssimo Custo de CPU (Passo 4)
+
 - [ ] Transmissão de estados locais via `submit_state()` no canal `CH_STATE` nativo do QuanticNet.
 - [ ] Validação autoritativa em microssegundos no servidor (sem nós pesados de física na SceneTree):
   - Validação de coordenadas contra a NavMesh pré-compilada do chunk (rejeição de posições fora da malha navegável ou dentro de obstáculos).
@@ -45,5 +49,6 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
 - [ ] Conectar e processar o sinal `snapback_received` no `PlayerAvatar`: reconciliação instantânea da posição do avatar com descarte de predições inválidas após correção do servidor.
 
 ### 7.5 Validação e Testes de Resiliência do Servidor Sob Ataque (Passo 5)
+
 - [ ] Testes unitários GUT AAA do validador de movimento autoritativo.
 - [ ] Teste interativo in-game: disparar hacks pela janela do HUD e comprovar que o servidor intercepta 100% das tentativas aplicando Snapbacks suaves e precisos sem desconectar o peer (`max_strikes = 9999`).

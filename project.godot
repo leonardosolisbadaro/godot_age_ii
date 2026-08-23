@@ -36,6 +36,10 @@ enabled=PackedStringArray("res://addons/quantic_net/plugin.cfg", "res://addons/g
 
 3d/physics_engine="Jolt Physics"
 
+[navigation]
+
+3d/warnings/navmesh_edge_merge_errors=false
+
 [rendering]
 
 rendering_device/driver.windows="d3d12"

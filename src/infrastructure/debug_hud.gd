@@ -54,9 +54,7 @@ signal radius_changed(new_radius: float)
 
 signal toggle_wireframe_requested()
 signal toggle_collisions_requested()
-signal toggle_water_requested()
 signal toggle_shadows_requested()
-signal toggle_telemetry_requested()
 
 signal water_volume_transform_applied(chunk_name: String, volume_name: String, data: Dictionary)
 signal water_volume_fix_saved(chunk_name: String, volume_name: String, data: Dictionary)
@@ -189,10 +187,10 @@ func _setup_ui() -> void:
 	# 6. Janela Flutuante: Telemetria Completa (F2)
 	_setup_telemetry_window()
 
-
 # ==============================================================================
 # HELPERS DE ESTILIZAÇÃO SÓLIDA (THEMING)
 # ==============================================================================
+
 
 func _create_flat_stylebox(
 	bg_color: Color,
@@ -275,16 +273,21 @@ func _style_item_list(il: ItemList) -> void:
 	var sb_bg = _create_flat_stylebox(COLOR_BG_INPUT, COLOR_BORDER, 1, 2)
 	il.add_theme_stylebox_override("panel", sb_bg)
 
-	var sb_selected = _create_flat_stylebox(Color(0.20, 0.30, 0.45, 1.0), COLOR_BORDER_FOCUSED, 1, 2)
+	var sb_selected = _create_flat_stylebox(
+		Color(0.20, 0.30, 0.45, 1.0),
+		COLOR_BORDER_FOCUSED,
+		1,
+		2,
+	)
 	il.add_theme_stylebox_override("selected", sb_selected)
 	il.add_theme_stylebox_override("selected_focus", sb_selected)
 	il.add_theme_color_override("font_color", Color(0.88, 0.90, 0.95))
 	il.add_theme_color_override("font_selected_color", Color(1.0, 1.0, 1.0))
 
-
 # ==============================================================================
 # TOP MENU BAR
 # ==============================================================================
+
 
 func _setup_top_menu_bar() -> void:
 	_top_bar = Panel.new()
@@ -383,10 +386,10 @@ func _on_tools_menu_pressed(id: int) -> void:
 			# Dispara evento simulando tecla G se necessario
 			pass
 
-
 # ==============================================================================
 # FABRICA DE JANELAS FLUTUANTES ARRASTAVEIS (VISUAL SOLIDO)
 # ==============================================================================
+
 
 func _create_window_frame(
 	window_name: String,
@@ -473,17 +476,18 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and _dragging_window:
 		_dragging_window.global_position = get_viewport().get_mouse_position() + _drag_mouse_offset
 
-
 # ==============================================================================
 # JANELA 1: WORLD OUTLINER
 # ==============================================================================
+
 
 func _setup_outliner_window() -> void:
 	var frame = _create_window_frame(
 		"WorldOutlinerWindow",
 		"World Outliner",
 		Rect2(20.0, 44.0, 440.0, 560.0),
-		func(): _outliner_window.visible = false
+		func():
+			_outliner_window.visible = false,
 	)
 	_outliner_window = frame["window"]
 	var vbox: VBoxContainer = frame["body"]
@@ -503,7 +507,7 @@ func _setup_outliner_window() -> void:
 		["Arvores", "trees"],
 		["Construcoes", "buildings"],
 		["Props", "props"],
-		["Vegetacao", "plants"]
+		["Vegetacao", "plants"],
 	]
 	for c in cats:
 		var btn = Button.new()
@@ -554,13 +558,15 @@ func _setup_outliner_window() -> void:
 
 	_btn_batch_save = Button.new()
 	_btn_batch_save.text = "Salvar Todos"
-	_btn_batch_save.pressed.connect(func(): batch_save_requested.emit())
+	_btn_batch_save.pressed.connect(func():
+			batch_save_requested.emit())
 	_style_button(_btn_batch_save, true)
 	footer_hbox.add_child(_btn_batch_save)
 
 	_btn_batch_discard = Button.new()
 	_btn_batch_discard.text = "Descartar"
-	_btn_batch_discard.pressed.connect(func(): batch_discard_requested.emit())
+	_btn_batch_discard.pressed.connect(func():
+			batch_discard_requested.emit())
 	_style_button(_btn_batch_discard)
 	footer_hbox.add_child(_btn_batch_discard)
 
@@ -573,17 +579,18 @@ func _on_radius_slider_changed(val: float) -> void:
 		_label_radius_val.text = "%dm" % int(val)
 	radius_changed.emit(val)
 
-
 # ==============================================================================
 # JANELA 2: INSPETOR DE PROPRIEDADES DO ATOR
 # ==============================================================================
+
 
 func _setup_inspector_window() -> void:
 	var frame = _create_window_frame(
 		"ActorInspectorWindow",
 		"Propriedades do Ator",
 		Rect2(470.0, 44.0, 520.0, 580.0),
-		func(): _inspector_window.visible = false
+		func():
+			_inspector_window.visible = false,
 	)
 	_inspector_window = frame["window"]
 	_label_inspector_title = frame["title_label"]
@@ -771,17 +778,18 @@ func _create_editor_spinbox(
 	sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return sb
 
-
 # ==============================================================================
 # JANELA 3: EDITOR DE VOLUMES DE ÁGUA
 # ==============================================================================
+
 
 func _setup_water_editor_window() -> void:
 	var frame = _create_window_frame(
 		"WaterEditorWindow",
 		"Volumes de Agua",
 		Rect2(480.0, 44.0, 420.0, 480.0),
-		func(): _water_editor_window.visible = false
+		func():
+			_water_editor_window.visible = false,
 	)
 	_water_editor_window = frame["window"]
 	var body: VBoxContainer = frame["body"]
@@ -867,7 +875,8 @@ func _setup_water_editor_window() -> void:
 	_check_water_enabled = CheckBox.new()
 	_check_water_enabled.text = "Volume Habilitado / Visivel"
 	_check_water_enabled.button_pressed = true
-	_check_water_enabled.toggled.connect(func(_val): _on_water_field_changed(0.0))
+	_check_water_enabled.toggled.connect(func(_val):
+			_on_water_field_changed(0.0))
 	body.add_child(_check_water_enabled)
 
 	# Separador
@@ -982,8 +991,14 @@ func _on_water_field_changed(_val: float) -> void:
 	var data = {
 		"water_plane_height_m": _spin_water_y.value if _spin_water_y else -320.0,
 		"surface_y_m": _spin_water_y.value if _spin_water_y else -320.0,
-		"center_m": [_spin_water_center_x.value if _spin_water_center_x else 0.0, _spin_water_center_z.value if _spin_water_center_z else 0.0],
-		"size_m": [_spin_water_size_x.value if _spin_water_size_x else 2621.44, _spin_water_size_z.value if _spin_water_size_z else 2621.44],
+		"center_m": [
+			_spin_water_center_x.value if _spin_water_center_x else 0.0,
+			_spin_water_center_z.value if _spin_water_center_z else 0.0,
+		],
+		"size_m": [
+			_spin_water_size_x.value if _spin_water_size_x else 2621.44,
+			_spin_water_size_z.value if _spin_water_size_z else 2621.44,
+		],
 		"ocean_extension": _spin_water_ocean_ext.value if _spin_water_ocean_ext else 0.0,
 		"enabled": _check_water_enabled.button_pressed if _check_water_enabled else true,
 	}
@@ -1001,8 +1016,14 @@ func _on_btn_water_save_pressed() -> void:
 	var data = {
 		"water_plane_height_m": _spin_water_y.value if _spin_water_y else -320.0,
 		"surface_y_m": _spin_water_y.value if _spin_water_y else -320.0,
-		"center_m": [_spin_water_center_x.value if _spin_water_center_x else 0.0, _spin_water_center_z.value if _spin_water_center_z else 0.0],
-		"size_m": [_spin_water_size_x.value if _spin_water_size_x else 2621.44, _spin_water_size_z.value if _spin_water_size_z else 2621.44],
+		"center_m": [
+			_spin_water_center_x.value if _spin_water_center_x else 0.0,
+			_spin_water_center_z.value if _spin_water_center_z else 0.0,
+		],
+		"size_m": [
+			_spin_water_size_x.value if _spin_water_size_x else 2621.44,
+			_spin_water_size_z.value if _spin_water_size_z else 2621.44,
+		],
 		"ocean_extension": _spin_water_ocean_ext.value if _spin_water_ocean_ext else 0.0,
 		"enabled": _check_water_enabled.button_pressed if _check_water_enabled else true,
 	}
@@ -1022,17 +1043,18 @@ func _on_btn_water_reset_pressed() -> void:
 		_label_water_status.text = "Volume resetado para os valores originais RAW."
 		_label_water_status.modulate = COLOR_TEXT_MUTED
 
-
 # ==============================================================================
 # JANELA 4: TELEPORTES E BOOKMARKS
 # ==============================================================================
+
 
 func _setup_teleports_window() -> void:
 	var frame = _create_window_frame(
 		"TeleportsWindow",
 		"Teleportes Rapidos",
 		Rect2(20.0, 610.0, 440.0, 260.0),
-		func(): _teleports_window.visible = false
+		func():
+			_teleports_window.visible = false,
 	)
 	_teleports_window = frame["window"]
 	var vbox: VBoxContainer = frame["body"]
@@ -1117,17 +1139,18 @@ func _on_btn_add_bookmark_pressed() -> void:
 	bookmark_save_requested.emit(b_name, _current_avatar_pos, _current_chunk_name)
 	_input_bookmark_name.text = ""
 
-
 # ==============================================================================
 # JANELA 5: TELEMETRIA COMPLETA (F2)
 # ==============================================================================
+
 
 func _setup_telemetry_window() -> void:
 	var frame = _create_window_frame(
 		"TelemetryWindow",
 		"Telemetria & Diagnostico Tecnico (F2)",
 		Rect2(20.0, 44.0, 480.0, 430.0),
-		func(): _telemetry_window.visible = false
+		func():
+			_telemetry_window.visible = false,
 	)
 	_telemetry_window = frame["window"]
 	_label_telemetry_body = Label.new()
@@ -1136,15 +1159,15 @@ func _setup_telemetry_window() -> void:
 	frame["body"].add_child(_label_telemetry_body)
 	_telemetry_window.visible = false
 
-
 # ==============================================================================
 # GERENCIAMENTO E CONTROLE DE VISIBILIDADE EM CASCATA (ESC)
 # ==============================================================================
 
+
 func close_topmost_window() -> bool:
 	if _inspector_window and _inspector_window.visible:
 		_inspector_window.visible = false
-		actor_selected.emit({})
+		actor_selected.emit({ })
 		return true
 	if _water_editor_window and _water_editor_window.visible:
 		_water_editor_window.visible = false
@@ -1195,7 +1218,10 @@ func toggle_telemetry_window() -> void:
 
 
 func is_actor_inspector_open() -> bool:
-	return (_outliner_window and _outliner_window.visible) or (_inspector_window and _inspector_window.visible)
+	return (
+		(_outliner_window and _outliner_window.visible)
+		or (_inspector_window and _inspector_window.visible)
+	)
 
 
 func is_mouse_over_ui() -> bool:
@@ -1213,7 +1239,7 @@ func is_mouse_over_ui() -> bool:
 		_inspector_window,
 		_water_editor_window,
 		_teleports_window,
-		_telemetry_window
+		_telemetry_window,
 	]
 	for w in wins:
 		if w and w.visible and w.get_global_rect().has_point(m_pos):
@@ -1221,10 +1247,10 @@ func is_mouse_over_ui() -> bool:
 
 	return false
 
-
 # ==============================================================================
 # ATUALIZACAO DE DADOS E TELEMETRIA
 # ==============================================================================
+
 
 func update_telemetry(
 	avatar_pos: Vector3,
@@ -1248,7 +1274,9 @@ func update_telemetry(
 			fps,
 			mem_mb,
 			chunk_name,
-			avatar_pos.x, avatar_pos.y, avatar_pos.z,
+			avatar_pos.x,
+			avatar_pos.y,
+			avatar_pos.z,
 			dirty_count,
 		]
 
@@ -1272,7 +1300,10 @@ func update_telemetry(
 		var cache_stats = RuntimeAssetCacheClass.get_cache_stats()
 		var tex_cached = cache_stats.get("textures", 0)
 		var mesh_cached = cache_stats.get("meshes", 0)
-		var shape_cached = cache_stats.get("convex_shapes", 0) + cache_stats.get("trimesh_shapes", 0)
+		var shape_cached = cache_stats.get("convex_shapes", 0) + cache_stats.get(
+			"trimesh_shapes",
+			0,
+		)
 
 		var net_status = net_stats.get("status", "Modo Editor / Standalone")
 		var ping_ms = net_stats.get("ping_ms", 0.0)
@@ -1284,28 +1315,38 @@ func update_telemetry(
 
 		_label_telemetry_body.text = (
 			"=== RENDERIZACAO & GPU ===\n"
-			+ "  Frametime:      %.1f ms (CPU: %.2fms | Physics: %.2fms) | %d FPS\n" % [frametime_ms, cpu_process_ms, cpu_physics_ms, fps]
+			+ "  Frametime:      %.1f ms (CPU: %.2fms | Physics: %.2fms) | %d FPS\n"
+			% [frametime_ms, cpu_process_ms, cpu_physics_ms, fps]
 			+ "  Draw Calls:     %d chamadas de desenho\n" % draw_calls
 			+ "  Triangulos:     %s primitivas na cena\n" % prim_str
-			+ "  Memoria VRAM:   %.1f MB (Texturas: %.1f MB | Buffers: %.1f MB)\n\n" % [vram_total_mb, vram_tex_mb, vram_buf_mb]
+			+ "  Memoria VRAM:   %.1f MB (Texturas: %.1f MB | Buffers: %.1f MB)\n\n"
+			% [vram_total_mb, vram_tex_mb, vram_buf_mb]
 			+ "=== MUNDO & STREAMING ===\n"
 			+ "  Chunk Ativo:    %s | Altura Solo: %.1f m\n" % [chunk_name, ground_altitude]
-			+ "  Chunks Vivos:   %d em memoria | Atores: %d instancias\n" % [active_chunks, total_static_actors]
-			+ "  Asset Cache:    %d texturas | %d malhas | %d formas colisor\n" % [tex_cached, mesh_cached, shape_cached]
-			+ "  Modo / Wire:    %s | %s | Pendencias: %d\n\n" % ["[VOO]" if is_flying else "[SOLO]", "[WIREFRAME]" if is_wireframe else "[SOLIDO]", dirty_count]
+			+ "  Chunks Vivos:   %d em memoria | Atores: %d instancias\n"
+			% [active_chunks, total_static_actors]
+			+ "  Asset Cache:    %d texturas | %d malhas | %d formas colisor\n"
+			% [tex_cached, mesh_cached, shape_cached]
+			+ "  Modo / Wire:    %s | %s | Pendencias: %d\n\n"
+			% [
+				"[VOO]" if is_flying else "[SOLO]",
+				"[WIREFRAME]" if is_wireframe else "[SOLIDO]",
+				dirty_count,
+			]
 			+ "=== ENGINE & FISICA ===\n"
-			+ "  Cena Godot:     %d nos vivos | %d recursos carregados\n" % [nodes_count, resources_count]
+			+ "  Cena Godot:     %d nos vivos | %d recursos carregados\n"
+			% [nodes_count, resources_count]
 			+ "  Pares Colisao:  %d pares ativos no servidor 3D\n\n" % col_pairs
-			+ "=== REDE (QuanticNet) ===\n"
-			+ "  Status Sessao:  %s\n" % net_status
-			+ "  Latencia / RTT: %.1f ms | Trafego: d %.1f KB/s | u %.1f KB/s\n" % [ping_ms, net_in_kb, net_out_kb]
+			+ "=== REDE (QuanticNet) ===\n" + "  Status Sessao:  %s\n" % net_status
+			+ "  Latencia / RTT: %.1f ms | Trafego: d %.1f KB/s | u %.1f KB/s\n"
+			% [ping_ms, net_in_kb, net_out_kb]
 			+ "---------------------------------------------------\n"
 			+ "[F2] Telemetria  | [F3] Wireframe  | [F4] Outliner  | [G] Voo  | [ESC] Sair"
 		)
 
 
 func update_pending_summary(summary: Dictionary) -> void:
-	_dirty_actors_set = summary.get("dirty_set", {})
+	_dirty_actors_set = summary.get("dirty_set", { })
 	_apply_filters_and_refresh_list()
 	_update_inspector_dirty_status()
 
@@ -1317,13 +1358,13 @@ func _update_inspector_dirty_status() -> void:
 	if is_dirty:
 		_label_inspector_title.text = "* Propriedades: %s [%s] (Nao Salvo)" % [
 			_selected_actor_name,
-			_selected_actor_chunk
+			_selected_actor_chunk,
 		]
 		_label_inspector_title.modulate = COLOR_TEXT_WARN
 	else:
 		_label_inspector_title.text = "Propriedades: %s [%s]" % [
 			_selected_actor_name,
-			_selected_actor_chunk
+			_selected_actor_chunk,
 		]
 		_label_inspector_title.modulate = Color(0.92, 0.95, 1.0)
 
@@ -1331,7 +1372,7 @@ func _update_inspector_dirty_status() -> void:
 func update_nearby_actors(
 	actors: Array[Dictionary],
 	radius: float,
-	_center_pos: Vector3 = Vector3.ZERO
+	_center_pos: Vector3 = Vector3.ZERO,
 ) -> void:
 	_raw_nearby_actors = actors
 	_current_radius = radius
@@ -1371,7 +1412,10 @@ func _apply_filters_and_refresh_list() -> void:
 			"trees":
 				match_cat = "tree_trunk" in c_type or "tree" in mesh_name.to_lower()
 			"buildings":
-				match_cat = c_type == "concave" or "house" in mesh_name.to_lower() or "wall" in mesh_name.to_lower() or "gate" in mesh_name.to_lower()
+				match_cat = (
+					c_type == "concave" or "house" in mesh_name.to_lower()
+					or "wall" in mesh_name.to_lower() or "gate" in mesh_name.to_lower()
+				)
 			"props":
 				match_cat = c_type == "convex"
 			"plants":
@@ -1407,7 +1451,7 @@ func _apply_filters_and_refresh_list() -> void:
 		if dirty_count > 0:
 			_label_outliner_footer.text = "%d atores encontrados | %d alterado(s) nao salvo(s)" % [
 				_filtered_actors.size(),
-				dirty_count
+				dirty_count,
 			]
 		else:
 			_label_outliner_footer.text = "%d atores encontrados" % _filtered_actors.size()
@@ -1601,7 +1645,9 @@ func set_editor_values(
 	_is_populating_fields = false
 	if _label_editor_status and not status_msg.is_empty():
 		_label_editor_status.text = status_msg
-		_label_editor_status.modulate = COLOR_TEXT_WARN if _dirty_actors_set.has(_selected_actor_name) else COLOR_TEXT_MUTED
+		_label_editor_status.modulate = COLOR_TEXT_WARN if _dirty_actors_set.has(
+			_selected_actor_name
+		) else COLOR_TEXT_MUTED
 
 
 func get_current_position() -> Vector3:

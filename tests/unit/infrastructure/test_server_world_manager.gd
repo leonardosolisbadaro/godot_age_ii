@@ -37,3 +37,6 @@ func test_load_server_chunk_and_validate_physics() -> void:
 		6.0
 	)
 	assert_true(move_res["valid"])
+
+	# Cleanup
+	server_world.cleanup()

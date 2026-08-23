@@ -49,7 +49,7 @@ func start_server() -> void:
 		if qn and qn.has_method("host"):
 			var args = OS.get_cmdline_user_args()
 			var use_netem = "--netem" in args
-			qn.host(DEFAULT_PORT, DEFAULT_MAX_PLAYERS, DEFAULT_SECRET, use_netem)
+			qn.host(DEFAULT_PORT, DEFAULT_SECRET, "*", DEFAULT_MAX_PLAYERS, { "use_netem": use_netem })
 			print("[SERVER] QuanticNet host iniciado na porta %d." % DEFAULT_PORT)
 	else:
 		print("[SERVER] Modo Standalone ativo (fora da árvore de cena).")
@@ -57,6 +57,17 @@ func start_server() -> void:
 
 func get_server_world() -> RefCounted:
 	return _server_world
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		if _server_world and _server_world.has_method("cleanup"):
+			_server_world.cleanup()
+
+
+func _exit_tree() -> void:
+	if _server_world and _server_world.has_method("cleanup"):
+		_server_world.cleanup()
 
 
 func get_server_adapter() -> RefCounted:

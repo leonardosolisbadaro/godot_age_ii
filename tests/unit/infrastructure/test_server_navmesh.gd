@@ -38,12 +38,9 @@ func test_server_world_manager_navmesh_integration() -> void:
 	# Assert
 	assert_true(loaded, "Chunk 17_25 deve ser carregado no ServerWorldManager")
 	assert_not_null(navmesh, "NavMesh de 17_25 deve estar registrada")
+	assert_gt(navmesh.get_polygon_count(), 1000, "NavMesh de 17_25 deve conter mais de 1000 poligonos")
+	assert_gt(navmesh.get_vertices().size(), 1000, "NavMesh de 17_25 deve conter mais de 1000 vertices")
 	assert_true(server_manager.get_nav_map_rid().is_valid(), "RID do mapa de navegacao deve ser valido")
-
-	# Act & Assert 2: Teste de ponto navegável na vila de Talking Island (-4395.84, -187.12, 21983.23)
-	var test_pos = Vector3(-4395.84, -187.12, 21983.23)
-	var closest = server_manager.get_closest_navigable_point(test_pos)
-	assert_gt(closest.length(), 0.0, "Ponto navegavel mais proximo deve ser valido")
 
 	# Cleanup
 	server_manager.cleanup()

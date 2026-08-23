@@ -47,7 +47,10 @@ func _on_process_frame() -> void:
 
 	var target_chunk = ""
 	for i in range(combined_args.size()):
-		if (combined_args[i] == "--chunk" or combined_args[i] == "-c") and i + 1 < combined_args.size():
+		if (
+			(combined_args[i] == "--chunk" or combined_args[i] == "-c")
+			and i + 1 < combined_args.size()
+		):
 			target_chunk = combined_args[i + 1]
 			break
 
@@ -87,18 +90,18 @@ func bake_chunk_navmesh(chunk_name: String, adapter: RefCounted) -> void:
 	var origin_arr = meta.get("world_origin_meters", [0.0, 0.0, 0.0])
 	var chunk_origin = Vector3(float(origin_arr[0]), 0.0, float(origin_arr[2]))
 
-	var root = Node3D.new()
-	root.name = "NavMeshSourceRoot"
+	var nav_source_root = Node3D.new()
+	nav_source_root.name = "NavMeshSourceRoot"
 	# Desloca a raiz para que as geometrias mundiais fiquem no espaço local [0, 2621.44m] do chunk
-	root.position = -chunk_origin
-	get_root().add_child(root)
+	nav_source_root.position = -chunk_origin
+	get_root().add_child(nav_source_root)
 
 	# 1. Carrega a malha do terreno do chunk via TerrainChunkAdapter
 	var terrain_adapter = TerrainChunkAdapterClass.new()
 	var terrain_node = terrain_adapter.load_visual_mesh_node(chunk_name, BASE_MAPS_PATH)
 	if terrain_node:
 		terrain_node.name = "TerrainVisualMesh"
-		root.add_child(terrain_node)
+		nav_source_root.add_child(terrain_node)
 		print("[NAVMESH BAKE] Chunk '%s': Terreno carregado e anexado com sucesso." % chunk_name)
 	else:
 		print("[NAVMESH BAKE] [AVISO] Chunk '%s': Malha de terreno nao encontrada." % chunk_name)
@@ -106,17 +109,25 @@ func bake_chunk_navmesh(chunk_name: String, adapter: RefCounted) -> void:
 	# 2. Carrega os colisores pré-compilados de chunk_static_collision.tres (Single Source of Truth)
 	var baked_file = "%s/%s/client/chunk_static_collision.tres" % [BASE_MAPS_PATH, chunk_name]
 	var glob_path = ProjectSettings.globalize_path(baked_file)
-	var resolved = baked_file if FileAccess.file_exists(baked_file) else (glob_path if FileAccess.file_exists(glob_path) else "")
+	var resolved = ""
+	if FileAccess.file_exists(baked_file):
+		resolved = baked_file
+	elif FileAccess.file_exists(glob_path):
+		resolved = glob_path
 	var total_colliders_attached = 0
 
 	if not resolved.is_empty():
 		var config = ConfigFile.new()
-		var err = config.load(resolved)
-		if err == OK:
+		var cfg_err = config.load(resolved)
+		if cfg_err == OK:
 			for actor_name in config.get_sections():
 				var mesh_path = config.get_value(actor_name, "mesh_path", "")
 				var c_type = config.get_value(actor_name, "collision_type", "convex")
-				var xform: Transform3D = config.get_value(actor_name, "transform", Transform3D.IDENTITY)
+				var xform: Transform3D = config.get_value(
+					actor_name,
+					"transform",
+					Transform3D.IDENTITY,
+				)
 
 				var mesh = RuntimeAssetCacheClass.get_or_load_mesh(mesh_path)
 				if not mesh:
@@ -125,7 +136,11 @@ func bake_chunk_navmesh(chunk_name: String, adapter: RefCounted) -> void:
 				var shape: Shape3D = null
 				if c_type == "tree_trunk" or c_type == "tree_trunk_surface":
 					var surf_idx = int(config.get_value(actor_name, "surface_index", 0))
-					shape = RuntimeAssetCacheClass.get_or_create_trunk_convex_shape(mesh_path, mesh, surf_idx)
+					shape = RuntimeAssetCacheClass.get_or_create_trunk_convex_shape(
+						mesh_path,
+						mesh,
+						surf_idx,
+					)
 				elif c_type == "concave":
 					shape = RuntimeAssetCacheClass.get_or_create_trimesh_shape(mesh_path, mesh)
 				else:
@@ -137,10 +152,13 @@ func bake_chunk_navmesh(chunk_name: String, adapter: RefCounted) -> void:
 					var col = CollisionShape3D.new()
 					col.shape = shape
 					body.add_child(col)
-					root.add_child(body)
+					nav_source_root.add_child(body)
 					total_colliders_attached += 1
 
-	print("[NAVMESH BAKE] Chunk '%s': %d colisores estaticos carregados de '%s' e anexados para oclusao." % [chunk_name, total_colliders_attached, baked_file])
+	print(
+		"[NAVMESH BAKE] Chunk '%s': %d colisores estaticos carregados de '%s' e anexados para oclusao."
+		% [chunk_name, total_colliders_attached, baked_file]
+	)
 
 	# 3. Configura o NavigationMesh Recast
 	var nav_mesh = NavigationMesh.new()
@@ -156,7 +174,7 @@ func bake_chunk_navmesh(chunk_name: String, adapter: RefCounted) -> void:
 
 	# 4. Executa o parse e o bake no NavigationServer3D
 	var source_data = NavigationMeshSourceGeometryData3D.new()
-	NavigationServer3D.parse_source_geometry_data(nav_mesh, source_data, root)
+	NavigationServer3D.parse_source_geometry_data(nav_mesh, source_data, nav_source_root)
 	NavigationServer3D.bake_from_source_geometry_data(nav_mesh, source_data)
 
 	var poly_count = nav_mesh.get_polygon_count()
@@ -171,11 +189,14 @@ func bake_chunk_navmesh(chunk_name: String, adapter: RefCounted) -> void:
 	if not DirAccess.dir_exists_absolute(dir_path):
 		DirAccess.make_dir_recursive_absolute(dir_path)
 
-	var err = ResourceSaver.save(nav_mesh, target_file)
-	if err == OK:
-		print("[NAVMESH BAKE] Chunk '%s': Sucesso! %d poligonos / %d vertices salvos em '%s'." % [chunk_name, poly_count, vert_count, target_file])
+	var save_err = ResourceSaver.save(nav_mesh, target_file)
+	if save_err == OK:
+		print(
+			"[NAVMESH BAKE] Chunk '%s': Sucesso! %d poligonos / %d vertices salvos em '%s'."
+			% [chunk_name, poly_count, vert_count, target_file]
+		)
 	else:
-		print("[NAVMESH BAKE] [ERRO] Falha ao salvar '%s' (codigo: %d)." % [target_file, err])
+		print("[NAVMESH BAKE] [ERRO] Falha ao salvar '%s' (codigo: %d)." % [target_file, save_err])
 
-	get_root().remove_child(root)
-	root.free()
+	get_root().remove_child(nav_source_root)
+	nav_source_root.free()
