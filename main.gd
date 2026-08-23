@@ -25,6 +25,7 @@ const NetworkConstantsClass = preload("res://src/core/domain/network_constants.g
 # ==============================================================================
 
 const DEFAULT_ENABLE_EDITOR: bool = true
+const DEFAULT_UNCAP_FPS: bool = true
 
 # ==============================================================================
 # CONSTANTES DE ARGUMENTOS DE LINHA DE COMANDO (CLI)
@@ -34,6 +35,7 @@ const CLI_ARG_SERVER: String = "--server"
 const CLI_ARG_DEDICATED: String = "--dedicated"
 const CLI_ARG_ENABLE_EDITOR: String = "--enable-editor"
 const CLI_ARG_ENABLE_DTLS: String = "--enable-dtls"
+const CLI_ARG_CAP_FPS: String = "--cap-fps"
 const CLI_PREFIX_IP: String = "--ip="
 const CLI_PREFIX_PORT: String = "--port="
 
@@ -57,6 +59,10 @@ func _ready() -> void:
 	if CLI_ARG_ENABLE_EDITOR in all_args:
 		enable_editor = true
 
+	var uncap_fps: bool = DEFAULT_UNCAP_FPS
+	if CLI_ARG_CAP_FPS in all_args:
+		uncap_fps = false
+
 	var ip_val: String = NetworkConstantsClass.DEFAULT_SERVER_IP
 	var port_val: int = NetworkConstantsClass.DEFAULT_PORT
 
@@ -69,7 +75,7 @@ func _ready() -> void:
 	if is_server:
 		_start_server(port_val, NetworkConstantsClass.DEFAULT_BIND_IP, enable_dtls)
 	else:
-		_start_client(ip_val, port_val, enable_dtls, enable_editor)
+		_start_client(ip_val, port_val, enable_dtls, enable_editor, uncap_fps)
 
 
 func _start_server(
@@ -89,10 +95,12 @@ func _start_client(
 	port: int = NetworkConstantsClass.DEFAULT_PORT,
 	enable_dtls: bool = NetworkConstantsClass.DEFAULT_ENABLE_DTLS,
 	enable_editor: bool = DEFAULT_ENABLE_EDITOR,
+	uncap_fps: bool = true,
 ) -> void:
 	_client_orchestrator = ClientOrchestratorClass.new(false)
 	_client_orchestrator.name = "ClientOrchestrator"
 	_client_orchestrator.is_editor_mode = enable_editor
+	_client_orchestrator.uncap_fps = uncap_fps
 	add_child(_client_orchestrator)
 	_client_orchestrator.start_client(ip, port, enable_dtls)
 

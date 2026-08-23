@@ -58,32 +58,47 @@ res://src/
 - [x] Implementar [`ConnectionLogsPanel`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/debug/panels/connection_logs_panel.gd) ("Logs de Rede"): feed cronológico de eventos com timestamps `[HH:MM:SS]` e botão "Limpar Logs".
 - [x] Cobertura de 100% em testes unitários TDD GUT AAA para `DebugWindow`, `TelemetryPanel`, `GraphicsTelemetryPanel`, `ConnectionLogsPanel` e `DebugIdeHost`.
 
-### 7.3 Core Domain Compartilhado: Stats Dinâmicos de Lineage II & Conversão de Escala (TDD AAA)
+### 7.3 Core Domain Espacial, Streaming do Mundo & Shaders (TDD AAA)
 
-- [ ] Entidades de domínio puras e dinâmicas em `src/core/domain/`:
-  - `PlayerStats`: Estrutura de dados em memória mutável (flexível para futura leitura de JSON/DB), suportando atributos base (DEX, STR, etc.) e cálculos de velocidade de movimento (`run_speed`, `walk_speed`, penalidade de peso e buffs).
-  - `MovementIntent`: Intenção de deslocamento e orientação angular.
-  - `ScaleConverter`: Conversor bidirecional preciso entre Unreal Units ($UU$) e Metros da Godot.
-- [ ] Casos de uso de amostragem matemática em `src/core/use_cases/`:
-  - `SampleTerrainAltitudeUseCase`: Leitura em $O(1)$ de altitude via `heightfield.bin`.
-- [ ] Cobertura de 100% em testes unitários GUT AAA para mutação dinâmica de stats, fórmulas de velocidade e conversões.
+- [x] Entidades de domínio espacial puras em `src/core/domain/`:
+  - `TerrainChunkData`: Estrutura imutável de dados do terreno, matriz de alturas, máscaras de buraco (*holes*), limites e coordenadas globais.
+  - `StaticMeshInstanceData`: Representação pura de instâncias 3D no espaço (transform, escala, rotação e nome do recurso).
+  - `WaterVolumeData`: Definições puras de corpos d'água, cotas de superfície e dimensões por chunk.
+  - `EnvironmentZoneData`: Parâmetros de iluminação ambiente, luz solar, neblina e céu.
+  - `ScaleConverter`: Conversor determinístico e bidirecional entre Unreal Units ($UU$) e Metros da Godot.
+- [x] Casos de uso espaciais puros em `src/core/use_cases/`:
+  - `SampleTerrainAltitudeUseCase`: Amostragem matemática em $O(1)$ de altitude com interpolação bilinear sobre o `heightfield.bin`.
+  - `CalculateActiveChunksUseCase`: Cálculo da grade de chunks ativos em memória ao redor da posição de observação.
+- [x] Adaptadores e Infraestrutura de Apresentação em `src/client/`:
+  - `ChunkResourceAdapter` em `src/client/adapters/`: Carregador de disco desacoplado (`assets/maps/`) com autodescoberta de chunks disponíveis.
+  - `L2TerrainChunkNode` em `src/client/infrastructure/`: Geração da `ArrayMesh` do terreno e aplicação do shader multi-camada `l2_terrain.gdshader` (Splatmaps RGBA + Detail Maps até 12 camadas).
+  - `StaticMeshChunkNode` em `src/client/infrastructure/`: Renderização em lote de objetos 3D via `MultiMeshInstance3D` com mapeamento de `material_recipes.json`, texturas PBR, materiais *Two-Sided* e *Alpha Scissor*.
+  - `WaterChunkNode` em `src/client/infrastructure/`: Renderização de superfícies e volumes de água locais com `ocean_water.gdshader`.
+  - `WorldChunkManager` em `src/client/infrastructure/`: Gerenciador de streaming contínuo de chunks no cliente.
+  - `FlyCamera` em `src/client/infrastructure/`: Câmera livre de inspeção 3D com controles de voo de desenvolvedor.
+- [x] Resolução exata de arquivos e case-sensitivity com cache $O(1)$ para pacotes e modelos `.glb` e `.png`.
+- [x] Bateria de testes unitários TDD GUT AAA cobrindo todo o domínio espacial, casos de uso, adaptadores e orquestradores (46 testes e 167 asserts).
 
-### 7.4 Client-Side Prediction, Chão & Envio Autoritativo (`submit_state`)
+### 7.4 Core Domain de Gameplay: Stats Dinâmicos, Avatar & Client-Side Prediction (TDD AAA)
 
-- [ ] Carregamento visual do terreno sob os pés do avatar local (chão ativo).
-- [ ] Instanciação do nó visual do avatar (`PlayerAvatarView`) sobre o terreno.
+- [ ] Entidades de domínio de gameplay em `src/core/domain/`:
+  - `PlayerStats`: Estrutura mutável em memória com atributos base (DEX, STR, etc.) e cálculo de velocidade de movimento (`run_speed`, `walk_speed`, penalidade de peso e buffs).
+  - `MovementIntent`: Intenção de deslocamento direcional e rotação desacoplada de eventos de input da engine.
+  - `KinematicState`: Snapshot cinemático instantâneo (posição, velocidade linear, orientação e tick).
+- [ ] Instanciação do avatar (`PlayerAvatarView`) sobre o chão real ativo.
 - [ ] Implementar `LocalMovementPredictorUseCase` no cliente:
-  - Processamento de inputs locais (WASD / direção) a 60Hz.
-  - Avanço otimista da posição local (`_client_predicted_position`) baseado nos stats dinâmicos de velocidade (`PlayerStats`).
+  - Processamento de inputs locais (WASD / clique) a 60Hz.
+  - Avanço otimista da posição local baseado nos stats dinâmicos de velocidade (`PlayerStats`).
 - [ ] Envio periódico de pacotes de estado via `QuanticNet.submit_state()` no canal `CH_STATE`.
+- [ ] Bateria de testes unitários TDD GUT AAA cobrindo stats dinâmicos, fórmulas de velocidade e predição.
 
 ### 7.5 Servidor Autoritativo Headless: Validação & Snapbacks Determinísticos
 
 - [ ] Implementar `ServerChunkManager` em `src/server/infrastructure/`:
-  - Carregamento assíncrono em memória de `navmesh.res` e `heightfield.bin` para os chunks ativos sem criar instâncias visuais.
+  - Carregamento em memória de `heightfield.bin` para os chunks ativos sem instâncias visuais.
 - [ ] Implementar `ValidatePlayerMovementUseCase` em `src/server/use_cases/`:
   - Validação de taxa de velocidade linear com **tolerância elástica calibrada** ($\Delta s \le v_{max} \cdot \Delta t + \epsilon_{jitter}$).
-  - Validação de altitude vertical contra o terreno e conformidade contra a `navmesh.res`.
+  - Validação de altitude vertical contra o terreno.
 - [ ] Emissão de `Snapback` autoritativo pelo servidor quando os limites forem violados.
 - [ ] Reconciliação no cliente via `ReconcileServerSnapbackUseCase`: interceptação de `snapback_received`, reancoragem da predição e descarte de estados inválidos.
 - [ ] Testes unitários GUT AAA validando todas as condições de contorno de movimento autoritativo e rejeição de anomalias.
@@ -91,7 +106,7 @@ res://src/
 ### 7.6 Snapshot Interpolation & Visualização de Peers Remotos
 
 - [ ] Implementar `RemotePeerEntity` no domínio do cliente para rastreamento de jogadores remotos.
-- [ ] Consumo de `QuanticNet.get_remote_state()` no `_process` destravado do cliente.
+- [ ] Consumo de `QuanticNet.get_remote_state()` no loop de renderização do cliente.
 - [ ] Renderização e interpolação visual suave de avatares remotos conectados no mesmo servidor via buffer nativo C++ do QuanticNet (zero jitter / zero stuttering).
 
 ---
