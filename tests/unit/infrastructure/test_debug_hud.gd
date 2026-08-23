@@ -161,6 +161,35 @@ func test_debug_hud_water_editor_population_and_events() -> void:
 	assert_signal_emitted(hud, "water_volume_reset_requested", "Deve emitir water_volume_reset_requested ao resetar")
 
 
+func test_debug_hud_water_editor_preserves_raw_decimal_precision() -> void:
+	# Arrange
+	var hud = DebugHUDClass.new()
+	add_child_autofree(hud)
+
+	var dummy_water_data = {
+		"water_volumes": {
+			"WaterVolume3": {
+				"name": "WaterVolume3",
+				"water_plane_height_m": -302.08,
+				"surface_y_m": -302.08,
+				"center_m": [123.45, 678.91],
+				"size_m": [2621.44, 2621.44],
+				"ocean_extension": 12.34,
+				"enabled": true
+			}
+		}
+	}
+
+	# Act
+	hud.populate_water_volumes("16_25", dummy_water_data)
+
+	# Assert: Precisão exata de 2 a 3 casas decimais
+	assert_almost_eq(hud._spin_water_y.value, -302.08, 0.0001, "Altitude Y deve preservar -302.08 com exatidão")
+	assert_almost_eq(hud._spin_water_center_x.value, 123.45, 0.001, "Centro X deve preservar 123.45")
+	assert_almost_eq(hud._spin_water_center_z.value, 678.91, 0.001, "Centro Z deve preservar 678.91")
+	assert_almost_eq(hud._spin_water_ocean_ext.value, 12.34, 0.001, "Extensao oceano deve preservar 12.34")
+
+
 func test_debug_hud_actor_filtering() -> void:
 	# Arrange
 	var hud = DebugHUDClass.new()

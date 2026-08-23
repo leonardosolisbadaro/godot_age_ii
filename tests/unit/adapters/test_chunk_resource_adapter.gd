@@ -308,6 +308,17 @@ func test_apply_water_volumes_fix_dict_format() -> void:
 	assert_eq(volumes["NewPond"].get("surface_y_m"), -50.0)
 
 
+func test_load_water_volumes_fix_dict_non_existing() -> void:
+	# Arrange
+	var adapter = ChunkResourceAdapterClass.new("res://assets/maps")
+
+	# Act
+	var fix_dict = adapter.load_water_volumes_fix_dict("non_existing_99_99")
+
+	# Assert
+	assert_true(fix_dict.is_empty(), "Chunk inexistente deve retornar dicionario vazio")
+
+
 func test_save_collision_override_io() -> void:
 	# Arrange
 	var test_maps_path = "res://tests/scratch/maps"

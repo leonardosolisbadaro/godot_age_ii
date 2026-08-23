@@ -205,13 +205,57 @@ func update_water_volume_runtime(chunk_name: String, volume_name: String, data: 
 
 
 func save_single_water_volume_fix(chunk_name: String, volume_name: String, data: Dictionary) -> bool:
-	var fix_path = "%s/%s/water_volumes_fix.json" % [base_maps_path, chunk_name]
-	var fix_data = _resource_adapter.load_water_volumes_dict(chunk_name)
+	var raw_data: Dictionary = { }
+	var t_node = get_active_terrain_node(chunk_name)
+	if t_node and t_node.has_method("get_raw_water_volume_data"):
+		raw_data = t_node.get_raw_water_volume_data(volume_name)
+
+	var raw_y = float(raw_data.get("surface_y_m", raw_data.get("water_plane_height_m", 0.0)))
+	var raw_center = raw_data.get("center_m", [0.0, 0.0])
+	var raw_cx = float(raw_center[0]) if (raw_center is Array and raw_center.size() >= 2) else 0.0
+	var raw_cz = float(raw_center[1]) if (raw_center is Array and raw_center.size() >= 2) else 0.0
+
+	var raw_size = raw_data.get("size_m", [2621.44, 2621.44])
+	var raw_sx = float(raw_size[0]) if (raw_size is Array and raw_size.size() >= 2) else 2621.44
+	var raw_sz = float(raw_size[1]) if (raw_size is Array and raw_size.size() >= 2) else 2621.44
+
+	var raw_ext = float(raw_data.get("ocean_extension", 0.0))
+	var raw_enabled = bool(raw_data.get("enabled", true))
+
+	var new_y = float(data.get("surface_y_m", data.get("water_plane_height_m", 0.0)))
+	var new_center = data.get("center_m", [0.0, 0.0])
+	var new_cx = float(new_center[0]) if (new_center is Array and new_center.size() >= 2) else 0.0
+	var new_cz = float(new_center[1]) if (new_center is Array and new_center.size() >= 2) else 0.0
+
+	var new_size = data.get("size_m", [2621.44, 2621.44])
+	var new_sx = float(new_size[0]) if (new_size is Array and new_size.size() >= 2) else 2621.44
+	var new_sz = float(new_size[1]) if (new_size is Array and new_size.size() >= 2) else 2621.44
+
+	var new_ext = float(data.get("ocean_extension", 0.0))
+	var new_enabled = bool(data.get("enabled", true))
+
+	var is_modified = false
+	if not is_equal_approx(raw_y, new_y):
+		is_modified = true
+	if not is_equal_approx(raw_cx, new_cx) or not is_equal_approx(raw_cz, new_cz):
+		is_modified = true
+	if not is_equal_approx(raw_sx, new_sx) or not is_equal_approx(raw_sz, new_sz):
+		is_modified = true
+	if not is_equal_approx(raw_ext, new_ext):
+		is_modified = true
+	if raw_enabled != new_enabled:
+		is_modified = true
+
+	var fix_data = _resource_adapter.load_water_volumes_fix_dict(chunk_name)
 	var fix_volumes = fix_data.get("water_volumes", { })
 	if not (fix_volumes is Dictionary):
 		fix_volumes = { }
 
-	fix_volumes[volume_name] = data
+	if not is_modified:
+		fix_volumes.erase(volume_name)
+	else:
+		fix_volumes[volume_name] = data
+
 	var save_payload = {
 		"water_volumes": fix_volumes,
 	}
@@ -219,7 +263,7 @@ func save_single_water_volume_fix(chunk_name: String, volume_name: String, data:
 
 
 func reset_water_volume(chunk_name: String, volume_name: String) -> Dictionary:
-	var fix_data = _resource_adapter.load_water_volumes_dict(chunk_name)
+	var fix_data = _resource_adapter.load_water_volumes_fix_dict(chunk_name)
 	var fix_volumes = fix_data.get("water_volumes", { })
 	if fix_volumes is Dictionary and fix_volumes.has(volume_name):
 		fix_volumes.erase(volume_name)

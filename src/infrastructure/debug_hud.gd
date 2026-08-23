@@ -749,9 +749,30 @@ func _rotate_selected_yaw(degrees_delta: float) -> void:
 
 
 func _anchor_selected_to_ground() -> void:
-	if _selected_actor_name.is_empty():
+	if _selected_actor_name.is_empty() or not _spin_pos_y:
 		return
-	var pos = Vector3(_spin_pos_x.value, _spin_pos_y.value, _spin_pos_z.value)
+	if _current_avatar_pos != Vector3.ZERO:
+		_spin_pos_y.value = _current_avatar_pos.y
+
+
+func _create_editor_spinbox(
+	min_val: float,
+	max_val: float,
+	step_val: float,
+	arrow_step_val: float,
+	suffix_str: String,
+) -> SpinBox:
+	var sb = SpinBox.new()
+	sb.min_value = min_val
+	sb.max_value = max_val
+	sb.step = step_val
+	sb.custom_arrow_step = arrow_step_val
+	sb.suffix = suffix_str
+	sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return sb
+
+
+# ==============================================================================
 # JANELA 3: EDITOR DE VOLUMES DE ÁGUA
 # ==============================================================================
 
@@ -794,11 +815,11 @@ func _setup_water_editor_window() -> void:
 	grid.add_theme_constant_override("v_separation", 6)
 	body.add_child(grid)
 
-	# Altitude Y
+	# Altitude Y (Precisão milimétrica / sub-centímetro)
 	var lbl_y = Label.new()
 	lbl_y.text = "Altitude (Y):"
 	grid.add_child(lbl_y)
-	_spin_water_y = _create_editor_spinbox(-2000.0, 2000.0, 0.1, " m")
+	_spin_water_y = _create_editor_spinbox(-2000.0, 2000.0, 0.001, 0.1, " m")
 	_spin_water_y.value_changed.connect(_on_water_field_changed)
 	grid.add_child(_spin_water_y)
 
@@ -806,7 +827,7 @@ func _setup_water_editor_window() -> void:
 	var lbl_cx = Label.new()
 	lbl_cx.text = "Centro X:"
 	grid.add_child(lbl_cx)
-	_spin_water_center_x = _create_editor_spinbox(-20000.0, 20000.0, 1.0, " m")
+	_spin_water_center_x = _create_editor_spinbox(-20000.0, 20000.0, 0.01, 1.0, " m")
 	_spin_water_center_x.value_changed.connect(_on_water_field_changed)
 	grid.add_child(_spin_water_center_x)
 
@@ -814,7 +835,7 @@ func _setup_water_editor_window() -> void:
 	var lbl_cz = Label.new()
 	lbl_cz.text = "Centro Z:"
 	grid.add_child(lbl_cz)
-	_spin_water_center_z = _create_editor_spinbox(-20000.0, 20000.0, 1.0, " m")
+	_spin_water_center_z = _create_editor_spinbox(-20000.0, 20000.0, 0.01, 1.0, " m")
 	_spin_water_center_z.value_changed.connect(_on_water_field_changed)
 	grid.add_child(_spin_water_center_z)
 
@@ -822,7 +843,7 @@ func _setup_water_editor_window() -> void:
 	var lbl_sx = Label.new()
 	lbl_sx.text = "Largura (X):"
 	grid.add_child(lbl_sx)
-	_spin_water_size_x = _create_editor_spinbox(1.0, 50000.0, 1.0, " m")
+	_spin_water_size_x = _create_editor_spinbox(1.0, 50000.0, 0.01, 1.0, " m")
 	_spin_water_size_x.value_changed.connect(_on_water_field_changed)
 	grid.add_child(_spin_water_size_x)
 
@@ -830,7 +851,7 @@ func _setup_water_editor_window() -> void:
 	var lbl_sz = Label.new()
 	lbl_sz.text = "Comprimento (Z):"
 	grid.add_child(lbl_sz)
-	_spin_water_size_z = _create_editor_spinbox(1.0, 50000.0, 1.0, " m")
+	_spin_water_size_z = _create_editor_spinbox(1.0, 50000.0, 0.01, 1.0, " m")
 	_spin_water_size_z.value_changed.connect(_on_water_field_changed)
 	grid.add_child(_spin_water_size_z)
 
@@ -838,7 +859,7 @@ func _setup_water_editor_window() -> void:
 	var lbl_ext = Label.new()
 	lbl_ext.text = "Extensao Oceano:"
 	grid.add_child(lbl_ext)
-	_spin_water_ocean_ext = _create_editor_spinbox(0.0, 100000.0, 10.0, " m")
+	_spin_water_ocean_ext = _create_editor_spinbox(0.0, 100000.0, 0.01, 10.0, " m")
 	_spin_water_ocean_ext.value_changed.connect(_on_water_field_changed)
 	grid.add_child(_spin_water_ocean_ext)
 
@@ -974,7 +995,7 @@ func _on_water_field_changed(_val: float) -> void:
 
 
 func _on_btn_water_save_pressed() -> void:
-	if _selected_water_volume_name.is_empty():
+	if _selected_water_volume_name.is_empty() or _current_chunk_name.is_empty():
 		return
 
 	var data = {
@@ -993,10 +1014,13 @@ func _on_btn_water_save_pressed() -> void:
 
 
 func _on_btn_water_reset_pressed() -> void:
-	if _selected_water_volume_name.is_empty():
+	if _selected_water_volume_name.is_empty() or _current_chunk_name.is_empty():
 		return
 
 	water_volume_reset_requested.emit(_current_chunk_name, _selected_water_volume_name)
+	if _label_water_status:
+		_label_water_status.text = "Volume resetado para os valores originais RAW."
+		_label_water_status.modulate = COLOR_TEXT_MUTED
 
 
 # ==============================================================================

@@ -159,6 +159,13 @@ func _apply_water_volumes_fix(water_data: Dictionary, fix_data: Dictionary) -> D
 	return water_data
 
 
+func load_water_volumes_fix_dict(chunk_name: String) -> Dictionary:
+	var fix_root = "%s/%s/water_volumes_fix.json" % [base_maps_path, chunk_name]
+	if not _file_exists(fix_root):
+		return { }
+	return _read_json_as_dict(fix_root)
+
+
 func save_water_volumes_fix(chunk_name: String, fix_data: Dictionary) -> bool:
 	var fix_path = "%s/%s/water_volumes_fix.json" % [base_maps_path, chunk_name]
 	var target = _resolve_write_path(fix_path)

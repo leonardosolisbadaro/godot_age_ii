@@ -25,12 +25,12 @@ func _ready() -> void:
 	var is_server = (
 		("--server" in user_args) or ("--server" in main_args) or ("--dedicated" in user_args)
 	)
-	var is_client = ("--client" in user_args) or ("--client" in main_args)
+	var no_editor = ("--no-editor" in user_args) or ("--no-editor" in main_args)
 
 	if is_server:
 		_start_server()
 	else:
-		_start_client(not is_client)
+		_start_client(not no_editor)
 
 
 func _start_server() -> void:
