@@ -40,15 +40,15 @@ Roadmap e tarefas de implementação governadas por TDD, Clean Architecture e Fi
 
 ### 7.4 Simulação State-Based Autoritativa com Baixíssimo Custo de CPU (Passo 4)
 
-- [ ] Transmissão de estados locais via `submit_state()` no canal `CH_STATE` nativo do QuanticNet.
-- [ ] Validação autoritativa em microssegundos no servidor (sem nós pesados de física na SceneTree):
+- [x] Transmissão de estados locais via `submit_state()` no canal `CH_STATE` nativo do QuanticNet.
+- [x] Validação autoritativa em microssegundos no servidor (sem nós pesados de física na SceneTree):
   - Validação de coordenadas contra a NavMesh pré-compilada do chunk (rejeição de posições fora da malha navegável ou dentro de obstáculos).
   - Validação de velocidade linear com **tolerância elástica** calibrada (considerando velocidade máxima do avatar, $\Delta t$ e compensação de jitter/RTT).
   - Validação de altitude vertical ($Y$) contra o `HeightfieldSampler` do terreno.
-- [ ] Disparo de Snapback autoritativo pelo servidor quando qualquer limite for violado.
-- [ ] Conectar e processar o sinal `snapback_received` no `PlayerAvatar`: reconciliação instantânea da posição do avatar com descarte de predições inválidas após correção do servidor.
+- [x] Disparo de Snapback autoritativo pelo servidor quando qualquer limite for violado.
+- [x] Conectar e processar o sinal `snapback_received` no `PlayerAvatar`: reconciliação instantânea da posição do avatar com descarte de predições inválidas após correção do servidor.
 
 ### 7.5 Validação e Testes de Resiliência do Servidor Sob Ataque (Passo 5)
 
-- [ ] Testes unitários GUT AAA do validador de movimento autoritativo.
-- [ ] Teste interativo in-game: disparar hacks pela janela do HUD e comprovar que o servidor intercepta 100% das tentativas aplicando Snapbacks suaves e precisos sem desconectar o peer (`max_strikes = 9999`).
+- [x] Testes unitários GUT AAA do validador de movimento autoritativo.
+- [x] Teste interativo in-game: disparar hacks pela janela do HUD e comprovar que o servidor intercepta 100% das tentativas aplicando Snapbacks suaves e precisos sem desconectar o peer (`max_strikes = 9999`).

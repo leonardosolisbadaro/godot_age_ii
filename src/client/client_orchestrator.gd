@@ -116,19 +116,50 @@ func start_client() -> void:
 				qn.connection_state_changed.connect(_on_connection_state_changed)
 			if not qn.peer_joined.is_connected(_on_peer_joined):
 				qn.peer_joined.connect(_on_peer_joined)
+			if not qn.snapback_received.is_connected(_on_snapback_received):
+				qn.snapback_received.connect(_on_snapback_received)
+			if not qn.custom_packet_received.is_connected(_on_custom_packet_received):
+				qn.custom_packet_received.connect(_on_custom_packet_received)
 
 			qn.join(target_ip, target_port, DEFAULT_SECRET, use_netem, config)
 			print("[CLIENT] Tentando conectar ao servidor em %s:%d (Bare-Metal UDP)..." % [target_ip, target_port])
 
 
 func _on_connection_state_changed(state: int) -> void:
-	var qn = get_node_or_null("/root/QuanticNet")
-	var st_name = qn.get_state_string() if qn and qn.has_method("get_state_string") else str(state)
+	var st_name = str(state)
+	if is_inside_tree():
+		var qn = get_node_or_null("/root/QuanticNet")
+		if qn and qn.has_method("get_state_string"):
+			st_name = qn.get_state_string()
 	print("[CLIENT] Estado da conexao alterado: %s" % st_name)
 
 
 func _on_peer_joined(peer_id: int) -> void:
 	print("[CLIENT] Handshake concluido! Conectado a sessao (Peer ID: %d)." % peer_id)
+
+
+func _on_custom_packet_received(_from_peer: int, ptype: int, data: PackedByteArray) -> void:
+	if ptype == 102 and data.size() >= 21: # OP_SNAPBACK
+		var seq = data.decode_u32(0)
+		var sx = data.decode_float(4)
+		var sy = data.decode_float(8)
+		var sz = data.decode_float(12)
+		var srot = data.decode_float(16)
+		var reason = data.decode_u8(20)
+		var corrected_pos = Vector3(sx, sy, sz)
+		var corrected_rot = Vector3(0.0, srot, 0.0)
+
+		if _local_player and _local_player.has_method("reconcile_server_state"):
+			_local_player.reconcile_server_state(corrected_pos, corrected_rot)
+
+		var qn = get_node_or_null("/root/QuanticNet")
+		if qn and qn.has_signal("snapback_received"):
+			qn.snapback_received.emit(seq, corrected_pos, corrected_rot, reason, [])
+
+
+func _on_snapback_received(_seq: int, pos: Vector3, rot: Vector3, _reason: int, _replay: Array) -> void:
+	if _local_player and _local_player.has_method("reconcile_server_state"):
+		_local_player.reconcile_server_state(pos, rot)
 
 
 func _calculate_spawn_position() -> Vector3:

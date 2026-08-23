@@ -116,6 +116,7 @@ var is_sprinting: bool = false
 var is_noclip: bool = false
 var speed_hack_multiplier: float = 1.0
 var is_ui_hovered_callback: Callable
+var _packet_seq: int = 0
 
 var _camera_pivot: Node3D
 var _spring_arm: SpringArm3D
@@ -289,6 +290,29 @@ func _physics_process(delta: float) -> void:
 		# Rotina de Stair Stepping (Subida de Degraus e Soleiras de Portas)
 		if was_grounded and horiz_vel.length_squared() > 0.1 and not is_flying:
 			_handle_stair_step_up(horiz_vel, delta)
+
+	# Transmissão de Estado Autoritativo para o Servidor (32-bit Float UDP)
+	if is_inside_tree() and is_local:
+		var qn = get_node_or_null("/root/QuanticNet")
+		if qn and qn.has_method("send_game_packet") and qn.has_method("get_state"):
+			if qn.get_state() == 3: # ConnectionState.CONNECTED
+				_packet_seq = (_packet_seq + 1) & 0xFFFFFFFF
+				var pkt = PackedByteArray()
+				pkt.resize(25)
+				pkt.encode_u32(0, _packet_seq)
+				pkt.encode_float(4, global_position.x)
+				pkt.encode_float(8, global_position.y)
+				pkt.encode_float(12, global_position.z)
+				pkt.encode_float(16, rotation.y)
+				var custom_flags = (1 if is_flying else 0) | (2 if is_sprinting else 0) | (4 if is_noclip else 0)
+				pkt.encode_u8(20, custom_flags)
+				pkt.encode_float(21, delta)
+				qn.send_game_packet(1, 101, pkt, false)
+
+
+func reconcile_server_state(pos: Vector3, _rot: Vector3) -> void:
+	global_position = pos
+	velocity = Vector3.ZERO
 
 
 func set_speedhack(active: bool, mult: float = 5.0) -> void:
