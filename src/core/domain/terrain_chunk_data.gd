@@ -24,6 +24,7 @@ var quads_per_side: int
 var min_height: float
 var max_height: float
 var bounds_aabb: AABB
+var heightfield: PackedFloat32Array = PackedFloat32Array()
 
 
 func _init(
@@ -34,6 +35,7 @@ func _init(
 	p_quads_per_side: int = 256,
 	p_min_height: float = -500.0,
 	p_max_height: float = 500.0,
+	p_heightfield: PackedFloat32Array = PackedFloat32Array(),
 ) -> void:
 	chunk_name = p_name
 	coords = p_coords
@@ -42,6 +44,7 @@ func _init(
 	quads_per_side = p_quads_per_side
 	min_height = p_min_height
 	max_height = p_max_height
+	heightfield = p_heightfield
 
 	var half_size = size_meters * 0.5
 	var height_range = maxf(max_height - min_height, 1.0)

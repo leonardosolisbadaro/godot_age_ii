@@ -157,6 +157,10 @@ func get_active_chunk_names() -> Array[String]:
 	return names
 
 
+func get_active_terrain_chunks() -> Dictionary:
+	return _active_terrain_chunks
+
+
 func _init_lighting_and_environment() -> void:
 	_sun_light = DirectionalLight3D.new()
 	_sun_light.name = "WorldSunLight"

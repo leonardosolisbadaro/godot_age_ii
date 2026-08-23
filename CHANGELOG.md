@@ -22,6 +22,20 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- **Servidor Autoritativo Headless, Validação Cinemática & Replicação Multijogador (TDD GUT AAA)**:
+  - [`ServerChunkManager`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/server/infrastructure/server_chunk_manager.gd): Gerenciador espacial headless sem nós visuais com carregamento sob demanda de matrizes `heightfield.bin` em memória RAM.
+  - [`ValidatePlayerMovementUseCase`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/server/use_cases/validate_player_movement_use_case.gd): Caso de uso puro de validação autoritativa com tolerância elástica calibrada para jitter de rede e checagem de altitude vertical contra o terreno.
+  - [`ServerOrchestrator`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/server/infrastructure/server_orchestrator.gd): Rastreamento de peers conectados, validação contínua e disparo de Snapback em caso de violação cinemática.
+  - [`ClientOrchestrator`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/client/infrastructure/client_orchestrator.gd): Envio contínuo de estado previsto local via canal nativo QuanticNet (`submit_state`), instanciação dinâmica de avatares remotos (`_remote_avatars`) e tratamento de snapback corretivo.
+
+- **Core Domain de Gameplay, Stats Dinâmicos & Predição Local (TDD GUT AAA)**:
+  - [`PlayerStats`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/core/domain/player_stats.gd): Entidade pura contendo atributos de Lineage II (DEX, STR, etc.) e fórmulas exatas de velocidade em UU e metros/segundo.
+  - [`MovementIntent`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/core/domain/movement_intent.gd): Intenção de deslocamento e rotação desacoplada de eventos da engine.
+  - [`KinematicState`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/core/domain/kinematic_state.gd): Snapshot cinemático instantâneo (tick, posição, velocidade, yaw e contato com o solo).
+  - [`PredictPlayerMovementUseCase`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/core/use_cases/predict_player_movement_use_case.gd): Caso de uso determinístico de predição de movimento a 60Hz.
+  - [`PlayerAvatarView`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/client/infrastructure/player_avatar_view.gd): Nó de apresentação em 3ª pessoa com órbita de mouse (botão direito), zoom e amostragem bilinear contínua de altura de terreno.
+  - Alternância suave de visão entre avatar em 3ª pessoa e Câmera Livre (`FlyCamera`) via tecla `F3`.
+
 - **Core Domain Espacial & Casos de Uso Puros (TDD GUT AAA)**:
   - [`ScaleConverter`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/core/domain/scale_converter.gd): Conversor métrico determinístico entre Unreal Units ($UU$) e Metros da Godot ($100 UU = 1.0\text{ m}$) e mapeador de coordenadas para nomes de chunks (`16_24`).
   - [`TerrainChunkData`](file:///c:/Users/LEONARDO/Documents/godot_age_ii/src/core/domain/terrain_chunk_data.gd): Metadados espaciais, limites AABB e resolução de grade de terreno.

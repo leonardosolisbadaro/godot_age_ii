@@ -53,6 +53,7 @@ func _init(quantic_net_instance: Node = null) -> void:
 # CONTROLE DE CICLO DE VIDA DO SERVIDOR
 # ==============================================================================
 
+
 ## Inicia o servidor dedicado escutando na porta e IP especificados.
 ## Por padrão, 'enable_dtls' é false para suportar conexões UDP diretas entre redes distintas (WAN).
 func start_server(
@@ -138,9 +139,24 @@ func get_port() -> int:
 func get_bind_ip() -> String:
 	return _bind_ip
 
+
+## Envia um pacote de correção Snapback para um peer específico.
+func send_snapback(
+	peer_id: int,
+	seq: int,
+	pos: Vector3,
+	rot: Vector3,
+	reason: int = 1,
+	replay_inputs: Array = [],
+) -> void:
+	var qn = _get_quantic_net()
+	if qn != null and qn.has_method("send_snapback"):
+		qn.send_snapback(peer_id, seq, pos, rot, reason, replay_inputs)
+
 # ==============================================================================
 # MANIPULADORES DE SINAIS DO QUANTICNET
 # ==============================================================================
+
 
 func _connect_quantic_net_signals() -> void:
 	var qn = _get_quantic_net()

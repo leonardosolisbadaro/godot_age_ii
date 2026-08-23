@@ -20,5 +20,6 @@ if ($runningInstances) {
     Start-Sleep -Seconds 2
     
     Start-Process -FilePath $godotExe -ArgumentList "--path `"$projectPath`" -- --client" -WorkingDirectory $projectPath
+    Start-Process -FilePath $godotExe -ArgumentList "--path `"$projectPath`" -- --client" -WorkingDirectory $projectPath
     # Start-Process -FilePath $godotExe -ArgumentList "--path `"$projectPath`" -- --client --netem" -WorkingDirectory $projectPath
 }

@@ -21,24 +21,34 @@ const QuanticNetServerAdapterClass = preload(
 	"res://src/server/adapters/quantic_net_server_adapter.gd"
 )
 const NetworkConstantsClass = preload("res://src/core/domain/network_constants.gd")
+const ServerChunkManagerClass = preload("res://src/server/infrastructure/server_chunk_manager.gd")
+const ValidatePlayerMovementUseCaseClass = preload(
+	"res://src/server/use_cases/validate_player_movement_use_case.gd"
+)
+const KinematicStateClass = preload("res://src/core/domain/kinematic_state.gd")
+const PlayerStatsClass = preload("res://src/core/domain/player_stats.gd")
 
 # ==============================================================================
 # ESTADO INTERNO
 # ==============================================================================
 
 var _server_adapter: QuanticNetServerAdapterClass = null
+var _server_chunk_manager: ServerChunkManagerClass = null
+var _peer_states: Dictionary = { } # { peer_id: { "last_state": KinematicState, "stats": PlayerStats, "last_time": float } }
 var _auto_start: bool = true
 
 
 func _init(auto_start: bool = true) -> void:
 	_auto_start = auto_start
 	_server_adapter = QuanticNetServerAdapterClass.new()
+	_server_chunk_manager = ServerChunkManagerClass.new()
 
 
 func _ready() -> void:
 	_server_adapter.peer_joined.connect(_on_peer_joined)
 	_server_adapter.peer_left.connect(_on_peer_left)
 	_server_adapter.peer_rejected.connect(_on_peer_rejected)
+	_server_adapter.state_received.connect(_on_state_received)
 
 	if _auto_start:
 		start_server()
@@ -90,15 +100,59 @@ func is_running() -> bool:
 
 
 func _on_peer_joined(peer_id: int) -> void:
+	var stats = PlayerStatsClass.new()
+	_peer_states[peer_id] = {
+		"last_state": null,
+		"stats": stats,
+		"last_time": Time.get_ticks_msec() / 1000.0,
+	}
 	print("[ServerOrchestrator] [+] Peer #%d autenticado e registrado no mundo." % peer_id)
 
 
 func _on_peer_left(peer_id: int) -> void:
+	_peer_states.erase(peer_id)
 	print("[ServerOrchestrator] [-] Peer #%d desconectado do mundo." % peer_id)
 
 
 func _on_peer_rejected(peer_id: int, reason: String, strikes: int) -> void:
 	print(
-		"[ServerOrchestrator] [!] Infracao do Peer #%d: %s (Total strikes: %d)"
+		"[ServerOrchestrator] [!] Peer #%d rejeitado pelo QuanticNet (Motivo: %s, Strikes: %d)"
 		% [peer_id, reason, strikes]
 	)
+
+
+func _on_state_received(owner_id: int, pos: Vector3, rot: Vector3, _custom: int) -> void:
+	var now = Time.get_ticks_msec() / 1000.0
+	if not _peer_states.has(owner_id):
+		var stats = PlayerStatsClass.new()
+		_peer_states[owner_id] = {
+			"last_state": null,
+			"stats": stats,
+			"last_time": now,
+		}
+
+	var info = _peer_states[owner_id]
+	var last_st = info["last_state"]
+	var stats = info["stats"]
+	var dt = now - info["last_time"]
+	info["last_time"] = now
+
+	var submitted = KinematicStateClass.new(0, pos, Vector3.ZERO, rot.y, true)
+	var val_result = ValidatePlayerMovementUseCaseClass.execute(
+		last_st,
+		submitted,
+		stats,
+		dt,
+		_server_chunk_manager,
+		0.25,
+	)
+
+	if val_result["valid"]:
+		info["last_state"] = val_result.get("state", submitted)
+	else:
+		var snap_pos = val_result.get("snapback_pos", last_st.position if last_st else pos)
+		print(
+			"[ServerOrchestrator] [SNAPBACK] Peer #%d violou regras (%s)! Forcando retorno para %s"
+			% [owner_id, val_result["reason"], snap_pos]
+		)
+		_server_adapter.send_snapback(owner_id, 0, snap_pos, rot, 1, [])

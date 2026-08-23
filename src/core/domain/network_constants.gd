@@ -30,9 +30,9 @@ const DEFAULT_ENABLE_DTLS: bool = false
 const DEFAULT_SERVER_TICK_RATE: float = 20.0
 const DEFAULT_MAX_STRIKES: int = 9999
 const POSITION_MODE_FLOAT32: int = 0
-const DEFAULT_WORLD_BOUNDS: float = 2000.0
-const DEFAULT_CULL_RADIUS: float = 500.0
-const DEFAULT_ENTITY_AURA: float = 500.0
+const DEFAULT_WORLD_BOUNDS: float = 131072.0
+const DEFAULT_CULL_RADIUS: float = 5000.0
+const DEFAULT_ENTITY_AURA: float = 5000.0
 const INVALID_PEER_ID: int = 0
 
 # ==============================================================================

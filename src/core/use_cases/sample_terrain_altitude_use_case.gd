@@ -65,3 +65,18 @@ static func sample_normal(
 
 	var normal = Vector3(h_l - h_r, 2.0 * delta, h_u - h_d)
 	return normal.normalized()
+
+
+## Executa a amostragem da altitude global no terreno dado um chunk e uma coordenada de mundo.
+static func execute(chunk_data: RefCounted, world_pos: Vector3) -> float:
+	if chunk_data == null or not ("heightfield" in chunk_data):
+		return 0.0
+	var origin: Vector3 = chunk_data.world_origin if "world_origin" in chunk_data else Vector3.ZERO
+	var sz: float = float(chunk_data.size_meters) if "size_meters" in chunk_data else 2621.44
+	var res: int = int(chunk_data.quads_per_side) if "quads_per_side" in chunk_data else 256
+	var hfield: PackedFloat32Array = chunk_data.heightfield
+	if hfield.is_empty():
+		return 0.0
+	var local_x = world_pos.x - (origin.x - sz * 0.5)
+	var local_z = world_pos.z - (origin.z - sz * 0.5)
+	return sample_altitude(local_x, local_z, hfield, res, sz)

@@ -20,6 +20,7 @@ extends RefCounted
 const WaterVolumeDataClass = preload("res://src/core/domain/water_volume_data.gd")
 const EnvironmentZoneDataClass = preload("res://src/core/domain/environment_zone_data.gd")
 const ScaleConverterClass = preload("res://src/core/domain/scale_converter.gd")
+const TerrainChunkDataClass = preload("res://src/core/domain/terrain_chunk_data.gd")
 
 # ==============================================================================
 # CONSTANTES DE CAMINHO
@@ -31,6 +32,8 @@ const BASE_MODELS_PATH: String = "res://assets/models"
 # ==============================================================================
 # AUTODESCOBERTA E LEITURA DE CHUNKS
 # ==============================================================================
+
+static var _terrain_chunk_data_cache: Dictionary = { }
 
 
 ## Retorna a lista de nomes de chunks disponíveis no diretório assets/maps/ (ex: ["16_24", "16_25", ...]).
@@ -52,6 +55,31 @@ static func get_available_chunks(base_path: String = BASE_MAPS_PATH) -> Array[St
 
 	results.sort()
 	return results
+
+
+## Carrega e instancia os dados espaciais completos de terreno (TerrainChunkData) com cache O(1).
+static func load_terrain_chunk_data(chunk_name: String, base_path: String = BASE_MAPS_PATH) -> RefCounted:
+	if _terrain_chunk_data_cache.has(chunk_name):
+		return _terrain_chunk_data_cache[chunk_name]
+
+	var heights = load_heightfield_floats(chunk_name, base_path)
+	if heights.is_empty():
+		return null
+
+	var coords = ScaleConverterClass.chunk_name_to_coords(chunk_name)
+	var origin = ScaleConverterClass.chunk_coords_to_world_origin_meters(coords)
+	var chunk_data = TerrainChunkDataClass.new(
+		chunk_name,
+		coords,
+		origin,
+		ScaleConverterClass.CHUNK_SIZE_METERS,
+		256,
+		-500.0,
+		500.0,
+		heights,
+	)
+	_terrain_chunk_data_cache[chunk_name] = chunk_data
+	return chunk_data
 
 
 ## Carrega a matriz binária de alturas heightfield.bin (formato Float32 Little-Endian 256x256).

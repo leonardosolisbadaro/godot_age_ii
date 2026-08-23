@@ -81,27 +81,28 @@ res://src/
 
 ### 7.4 Core Domain de Gameplay: Stats Dinâmicos, Avatar & Client-Side Prediction (TDD AAA)
 
-- [ ] Entidades de domínio de gameplay em `src/core/domain/`:
+- [x] Entidades de domínio de gameplay em `src/core/domain/`:
   - `PlayerStats`: Estrutura mutável em memória com atributos base (DEX, STR, etc.) e cálculo de velocidade de movimento (`run_speed`, `walk_speed`, penalidade de peso e buffs).
   - `MovementIntent`: Intenção de deslocamento direcional e rotação desacoplada de eventos de input da engine.
   - `KinematicState`: Snapshot cinemático instantâneo (posição, velocidade linear, orientação e tick).
-- [ ] Instanciação do avatar (`PlayerAvatarView`) sobre o chão real ativo.
-- [ ] Implementar `LocalMovementPredictorUseCase` no cliente:
-  - Processamento de inputs locais (WASD / clique) a 60Hz.
-  - Avanço otimista da posição local baseado nos stats dinâmicos de velocidade (`PlayerStats`).
-- [ ] Envio periódico de pacotes de estado via `QuanticNet.submit_state()` no canal `CH_STATE`.
-- [ ] Bateria de testes unitários TDD GUT AAA cobrindo stats dinâmicos, fórmulas de velocidade e predição.
+- [x] Instanciação do avatar (`PlayerAvatarView`) sobre o chão real ativo em Talking Island Village com suporte a órbita de mouse e 3ª pessoa.
+- [x] Implementar `PredictPlayerMovementUseCase` no cliente:
+  - Processamento de inputs locais (WASD / Shift) a 60Hz.
+  - Avanço otimista da posição local baseado nos stats dinâmicos de velocidade (`PlayerStats`) e amostragem de terreno.
+- [x] Alternância rápida entre câmera em 3ª pessoa e Câmera Livre de Inspeção (`F3`).
+- [x] Bateria de testes unitários TDD GUT AAA cobrindo stats dinâmicos, intenção de movimento, predição e avatar (55 testes e 198 asserts).
 
 ### 7.5 Servidor Autoritativo Headless: Validação & Snapbacks Determinísticos
 
-- [ ] Implementar `ServerChunkManager` em `src/server/infrastructure/`:
+- [x] Implementar `ServerChunkManager` em `src/server/infrastructure/`:
   - Carregamento em memória de `heightfield.bin` para os chunks ativos sem instâncias visuais.
-- [ ] Implementar `ValidatePlayerMovementUseCase` em `src/server/use_cases/`:
+- [x] Implementar `ValidatePlayerMovementUseCase` em `src/server/use_cases/`:
   - Validação de taxa de velocidade linear com **tolerância elástica calibrada** ($\Delta s \le v_{max} \cdot \Delta t + \epsilon_{jitter}$).
-  - Validação de altitude vertical contra o terreno.
-- [ ] Emissão de `Snapback` autoritativo pelo servidor quando os limites forem violados.
-- [ ] Reconciliação no cliente via `ReconcileServerSnapbackUseCase`: interceptação de `snapback_received`, reancoragem da predição e descarte de estados inválidos.
-- [ ] Testes unitários GUT AAA validando todas as condições de contorno de movimento autoritativo e rejeição de anomalias.
+  - Validação de altitude vertical contra o relevo do terreno.
+- [x] Emissão de `Snapback` autoritativo pelo servidor quando os limites forem violados.
+- [x] Reconciliação no cliente via `snapback_received`: reancoragem da predição e teleporte para posição legítima.
+- [x] Instanciação e interpolação de avatares remotos em `ClientOrchestrator` via `state_received` e `peer_left`.
+- [x] Testes unitários GUT AAA validando todas as condições de contorno de movimento autoritativo e rejeição de anomalias (59 testes e 212 asserts).
 
 ### 7.6 Snapshot Interpolation & Visualização de Peers Remotos
 
