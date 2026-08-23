@@ -63,18 +63,14 @@ def clear_terrain_cache(run_godot: bool = False, godot_exe_path: Optional[str] =
     print("=" * 70)
 
     if run_godot:
-        godot_exe = Path(godot_exe_path) if godot_exe_path else None
-        if not godot_exe or not godot_exe.is_file():
-            # Tenta encontrar no PATH
-            which_godot = shutil.which("godot") or shutil.which("godot_console")
-            if which_godot:
-                godot_exe = Path(which_godot)
-
-        if godot_exe and godot_exe.is_file():
+        godot_exe = Path(godot_exe_path).resolve() if godot_exe_path else Path(
+            r"C:\Users\LEONARDO\Documents\Godot_v4.7.1-stable_win64.exe\Godot_v4.7.1-stable_win64_console.exe"
+        )
+        if godot_exe.is_file():
             print(f"\n[+] Iniciando o Godot 4.7 ({godot_exe.name})...")
             subprocess.run([str(godot_exe), "--path", str(project_root)])
         else:
-            print("\n[AVISO] Executável do Godot não especificado ou não encontrado no PATH.", file=sys.stderr)
+            print(f"\n[AVISO] Executável do Godot não encontrado em: {godot_exe}", file=sys.stderr)
 
 
 def main():

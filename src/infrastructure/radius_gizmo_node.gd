@@ -42,7 +42,8 @@ func _setup_nodes() -> void:
 	_line_material.albedo_color = Color(0.1, 0.85, 1.0, 0.9) # Ciano brilhante
 	_line_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_line_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_line_material.render_priority = 2
+	_line_material.no_depth_test = true
+	_line_material.render_priority = 10
 
 	_mesh_instance = MeshInstance3D.new()
 	_mesh_instance.name = "GizmoMeshInstance"

@@ -96,8 +96,10 @@ func apply_to_world_environment(
 	env.ambient_light_color = env_data.ambient_light_color
 	env.ambient_light_energy = max(MIN_AMBIENT_LIGHT_ENERGY, env_data.ambient_light_energy)
 
-	# Configura névoa volumétrica/distância suave
+	# Configura névoa linear de distância suave (perfeitamente nítido em volta do avatar)
 	env.fog_enabled = env_data.fog_enabled
 	env.fog_light_color = env_data.fog_color
-	env.fog_density = DEFAULT_FOG_DENSITY
-	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+	env.fog_mode = Environment.FOG_MODE_DEPTH
+	env.fog_depth_begin = maxf(env_data.fog_start_meters, 80.0)
+	env.fog_depth_end = maxf(env_data.fog_end_meters, 4000.0)
+	env.fog_depth_curve = 1.0

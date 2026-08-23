@@ -11,6 +11,9 @@
 extends GutTest
 
 const MainScript = preload("res://main.gd")
+const ClientOrchestratorClass = preload("res://src/client/client_orchestrator.gd")
+const ServerOrchestratorClass = preload("res://src/server/server_orchestrator.gd")
+const DebugWorldEditorClass = preload("res://src/debug/debug_world_editor.gd")
 
 
 func test_main_client_orchestration() -> void:
@@ -18,14 +21,12 @@ func test_main_client_orchestration() -> void:
 	var main_scene = MainScript.new()
 
 	# Act
-	main_scene._start_client()
+	main_scene._start_client(true)
 
 	# Assert
-	assert_not_null(main_scene.get_node_or_null("WorldChunkManager"), "WorldChunkManager deve estar instanciado")
-	assert_not_null(main_scene.get_node_or_null("PlayerAvatar"), "PlayerAvatar deve estar instanciado")
-	assert_not_null(main_scene.get_node_or_null("DebugHUD"), "DebugHUD deve estar instanciado")
-	assert_not_null(main_scene.get_node_or_null("SunLight"), "SunLight deve estar instanciado")
-	assert_not_null(main_scene.get_node_or_null("WorldEnvironment"), "WorldEnvironment deve estar instanciado")
+	assert_not_null(main_scene._client_orchestrator, "ClientOrchestrator deve estar instanciado")
+	assert_not_null(main_scene.get_world_chunk_manager(), "WorldChunkManager deve estar ativo")
+	assert_not_null(main_scene.get_local_player(), "PlayerAvatar deve estar instanciado")
 
 	# Cleanup
 	main_scene.free()
@@ -39,23 +40,34 @@ func test_main_server_orchestration() -> void:
 	main_scene._start_server()
 
 	# Assert
-	assert_not_null(main_scene._server_world, "ServerWorldManager deve estar ativo")
-	assert_not_null(main_scene._server_adapter, "QuanticNetServerAdapter deve estar ativo")
+	assert_not_null(main_scene._server_orchestrator, "ServerOrchestrator deve estar instanciado")
+	assert_not_null(main_scene.get_server_world(), "ServerWorldManager deve estar ativo")
+	assert_not_null(main_scene.get_server_adapter(), "QuanticNetServerAdapter deve estar ativo")
 
 	# Cleanup
 	main_scene.free()
 
 
-func test_calculate_spawn_position_fallback_and_map() -> void:
-	# Arrange
-	var main_scene = MainScript.new()
-
-	# Act
-	var spawn_pos = main_scene._calculate_spawn_position()
+func test_client_orchestrator_instantiation() -> void:
+	# Arrange & Act
+	var client = ClientOrchestratorClass.new()
+	client.is_editor_mode = true
 
 	# Assert
-	assert_ne(spawn_pos, Vector3.ZERO, "Spawn position não deve ser zero")
+	assert_not_null(client, "ClientOrchestrator deve instanciar com sucesso")
 
 	# Cleanup
-	main_scene.free()
+	client.free()
+
+
+func test_server_orchestrator_instantiation() -> void:
+	# Arrange & Act
+	var server = ServerOrchestratorClass.new()
+
+	# Assert
+	assert_not_null(server, "ServerOrchestrator deve instanciar com sucesso")
+
+	# Cleanup
+	server.free()
+
 

@@ -124,23 +124,13 @@ func load_environment_recipe_dict(chunk_name: String) -> Dictionary:
 
 func load_water_volumes_dict(chunk_name: String) -> Dictionary:
 	var path_root = "%s/%s/water_volumes.json" % [base_maps_path, chunk_name]
-	var path_server = "%s/%s/server/water_volumes.json" % [base_maps_path, chunk_name]
-	var path = path_root if _file_exists(path_root) else path_server
-
-	var data = _read_json_as_dict(path)
+	var data = _read_json_as_dict(path_root)
 	if not data.has("water_volumes") or not (data["water_volumes"] is Dictionary):
 		data["water_volumes"] = { }
 
 	var fix_root = "%s/%s/water_volumes_fix.json" % [base_maps_path, chunk_name]
-	var fix_client = "%s/%s/client/water_volumes_fix.json" % [base_maps_path, chunk_name]
-	var fix_path = ""
 	if _file_exists(fix_root):
-		fix_path = fix_root
-	elif _file_exists(fix_client):
-		fix_path = fix_client
-
-	if not fix_path.is_empty():
-		var fix_data = _read_json_as_dict(fix_path)
+		var fix_data = _read_json_as_dict(fix_root)
 		data = _apply_water_volumes_fix(data, fix_data)
 
 	return data
@@ -394,3 +384,58 @@ func save_collision_override(package_name: String, mesh_name: String, collision_
 	file.store_string(json_str)
 	file.close()
 	return true
+
+
+func load_world_teleports() -> Array:
+	var path = "%s/world_teleports.json" % base_maps_path
+	var dict = _read_json_as_dict(path)
+	if dict.has("teleports") and dict["teleports"] is Array:
+		return dict["teleports"]
+	return []
+
+
+func save_world_teleport(tp_name: String, position: Vector3, chunk_name: String) -> bool:
+	var path = "%s/world_teleports.json" % base_maps_path
+	var target = _resolve_write_path(path)
+	if target.is_empty():
+		return false
+
+	var dict = _read_json_as_dict(path)
+	if not dict.has("teleports") or not (dict["teleports"] is Array):
+		dict["teleports"] = []
+
+	var list: Array = dict["teleports"]
+	var pos_arr = [
+		round(position.x * 10.0) / 10.0,
+		round(position.y * 10.0) / 10.0,
+		round(position.z * 10.0) / 10.0
+	]
+
+	var found = false
+	for entry in list:
+		if entry is Dictionary and entry.get("name", "") == tp_name:
+			entry["position"] = pos_arr
+			entry["chunk_name"] = chunk_name
+			found = true
+			break
+
+	if not found:
+		list.append({
+			"name": tp_name,
+			"chunk_name": chunk_name,
+			"position": pos_arr,
+		})
+
+	var dir_path = target.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir_path):
+		DirAccess.make_dir_recursive_absolute(dir_path)
+
+	var file = FileAccess.open(target, FileAccess.WRITE)
+	if not file:
+		return false
+
+	var json_str = JSON.stringify(dict, "  ")
+	file.store_string(json_str)
+	file.close()
+	return true
+

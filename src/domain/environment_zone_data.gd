@@ -121,10 +121,13 @@ func from_recipe_dictionary(dict: Dictionary) -> void:
 		var col_arr = fog_dict.get("color_rgb", [0.7, 0.8, 0.9])
 		if col_arr.size() >= 3:
 			fog_color = Color(float(col_arr[0]), float(col_arr[1]), float(col_arr[2]))
-		var dist_arr = fog_dict.get("distance_range_meters", [fog_start_meters, fog_end_meters])
-		if dist_arr.size() >= 2:
+		var dist_arr = fog_dict.get("distance_range_meters", [])
+		if dist_arr is Array and dist_arr.size() >= 2:
 			fog_start_meters = float(dist_arr[0])
 			fog_end_meters = float(dist_arr[1])
+		else:
+			fog_start_meters = float(fog_dict.get("begin_meters", fog_start_meters))
+			fog_end_meters = float(fog_dict.get("end_meters", fog_end_meters))
 
 	var raw_wv = dict.get("water_volumes", { })
 	if raw_wv is Dictionary:

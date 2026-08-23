@@ -217,6 +217,9 @@ func _is_foliage_or_small_vegetation(mesh_path: String, instances: Array) -> boo
 
 
 func _setup_static_mesh_collisions(groups: Dictionary) -> void:
+	if _load_prebaked_collisions():
+		return
+
 	if groups.is_empty():
 		return
 
@@ -268,6 +271,52 @@ func _setup_static_mesh_collisions(groups: Dictionary) -> void:
 
 	if _collision_body.get_parent() == null and _collision_body.get_child_count() > 0:
 		add_child(_collision_body)
+
+
+func _load_prebaked_collisions() -> bool:
+	var baked_file = "%s/%s/client/chunk_static_collision.tres" % [base_maps_path, chunk_name]
+	var glob_path = ProjectSettings.globalize_path(baked_file)
+	var resolved = baked_file if FileAccess.file_exists(baked_file) else (glob_path if FileAccess.file_exists(glob_path) else "")
+	if resolved.is_empty():
+		return false
+
+	var config = ConfigFile.new()
+	var err = config.load(resolved)
+	if err != OK:
+		return false
+
+	if not _collision_body:
+		_collision_body = StaticBody3D.new()
+		_collision_body.name = "StaticMeshesCollisionBody"
+
+	for actor_name in config.get_sections():
+		var mesh_path = config.get_value(actor_name, "mesh_path", "")
+		var c_type = config.get_value(actor_name, "collision_type", "convex")
+		var xform: Transform3D = config.get_value(actor_name, "transform", Transform3D.IDENTITY)
+
+		var mesh = _load_mesh_resource(mesh_path)
+		if not mesh:
+			continue
+
+		var shape: Shape3D = null
+		if c_type == "tree_trunk" or c_type == "tree_trunk_surface":
+			shape = RuntimeAssetCacheClass.get_or_create_trunk_convex_shape(mesh_path, mesh, 0)
+		elif c_type == "concave":
+			shape = RuntimeAssetCacheClass.get_or_create_trimesh_shape(mesh_path, mesh)
+		else:
+			shape = RuntimeAssetCacheClass.get_or_create_convex_shape(mesh_path, mesh)
+
+		if shape:
+			var shape_node = CollisionShape3D.new()
+			shape_node.shape = shape
+			shape_node.transform = xform
+			_collision_shape_map[actor_name] = shape_node
+			_collision_body.add_child(shape_node)
+
+	if _collision_body.get_parent() == null and _collision_body.get_child_count() > 0:
+		add_child(_collision_body)
+
+	return _collision_body.get_child_count() > 0
 
 
 func _load_mesh_resource(mesh_path: String) -> Mesh:

@@ -197,3 +197,17 @@ static func get_mesh_count() -> int:
 	var count = _mesh_cache.size()
 	_mutex.unlock()
 	return count
+
+
+static func get_cache_stats() -> Dictionary:
+	_mutex.lock()
+	var stats = {
+		"textures": _texture_cache.size(),
+		"meshes": _mesh_cache.size(),
+		"convex_shapes": _convex_shape_cache.size(),
+		"trimesh_shapes": _trimesh_shape_cache.size(),
+		"trunk_shapes": _trunk_shape_cache.size(),
+	}
+	_mutex.unlock()
+	return stats
+

@@ -326,3 +326,37 @@ func test_save_collision_override_io() -> void:
 	assert_true(overrides.has("test_village_pkg.test_gate_mesh"), "custom_overrides deve conter a chave do pacote.modelo")
 	assert_eq(overrides["test_village_pkg.test_gate_mesh"].get("type"), "concave")
 
+
+func test_load_and_save_world_teleports_io() -> void:
+	# Arrange
+	var test_maps_path = "res://tests/scratch/maps"
+	var adapter = ChunkResourceAdapterClass.new(test_maps_path)
+	var tp_name = "Ponto de Teste Torre"
+	var tp_pos = Vector3(-4500.0, -220.0, 21000.0)
+	var tp_chunk = "17_25"
+
+	# Act
+	var saved = adapter.save_world_teleport(tp_name, tp_pos, tp_chunk)
+	var teleports = adapter.load_world_teleports()
+
+	# Assert
+	assert_true(saved, "save_world_teleport deve retornar true ao gravar")
+	assert_gt(teleports.size(), 0, "Deve conter ao menos 1 teleporte gravado")
+
+	var found_entry: Dictionary = {}
+	for entry in teleports:
+		if entry.get("name") == tp_name:
+			found_entry = entry
+			break
+
+	assert_false(found_entry.is_empty(), "O teleporte 'Ponto de Teste Torre' deve existir")
+	assert_eq(found_entry.get("chunk_name"), "17_25")
+	assert_eq(found_entry.get("position"), [-4500.0, -220.0, 21000.0])
+
+	# Cleanup
+	var tp_file = "%s/world_teleports.json" % test_maps_path
+	var glob_f = ProjectSettings.globalize_path(tp_file)
+	if FileAccess.file_exists(glob_f):
+		DirAccess.remove_absolute(glob_f)
+
+

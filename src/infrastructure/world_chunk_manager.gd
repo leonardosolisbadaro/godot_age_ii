@@ -197,6 +197,45 @@ func save_water_volumes_fix_for_chunk(chunk_name: String) -> bool:
 	return _resource_adapter.save_water_volumes_fix(chunk_name, data)
 
 
+func update_water_volume_runtime(chunk_name: String, volume_name: String, data: Dictionary) -> bool:
+	var t_node = get_active_terrain_node(chunk_name)
+	if t_node and t_node.has_method("update_water_volume_runtime"):
+		return t_node.update_water_volume_runtime(volume_name, data)
+	return false
+
+
+func save_single_water_volume_fix(chunk_name: String, volume_name: String, data: Dictionary) -> bool:
+	var fix_path = "%s/%s/water_volumes_fix.json" % [base_maps_path, chunk_name]
+	var fix_data = _resource_adapter.load_water_volumes_dict(chunk_name)
+	var fix_volumes = fix_data.get("water_volumes", { })
+	if not (fix_volumes is Dictionary):
+		fix_volumes = { }
+
+	fix_volumes[volume_name] = data
+	var save_payload = {
+		"water_volumes": fix_volumes,
+	}
+	return _resource_adapter.save_water_volumes_fix(chunk_name, save_payload)
+
+
+func reset_water_volume(chunk_name: String, volume_name: String) -> Dictionary:
+	var fix_data = _resource_adapter.load_water_volumes_dict(chunk_name)
+	var fix_volumes = fix_data.get("water_volumes", { })
+	if fix_volumes is Dictionary and fix_volumes.has(volume_name):
+		fix_volumes.erase(volume_name)
+		_resource_adapter.save_water_volumes_fix(chunk_name, { "water_volumes": fix_volumes })
+
+	var raw_data: Dictionary = { }
+	var t_node = get_active_terrain_node(chunk_name)
+	if t_node and t_node.has_method("get_raw_water_volume_data"):
+		raw_data = t_node.get_raw_water_volume_data(volume_name)
+		if not raw_data.is_empty():
+			t_node.update_water_volume_runtime(volume_name, raw_data)
+
+	return raw_data
+
+
+
 func set_wireframe_enabled(enabled: bool) -> void:
 	for t_node in _active_terrain_nodes.values():
 		if t_node and t_node.has_method("set_wireframe_enabled"):
@@ -313,15 +352,19 @@ func save_collision_rule_override(package_name: String, mesh_name: String, colli
 func get_pending_fixes_summary() -> Dictionary:
 	var total_actors = 0
 	var chunks: Array[String] = []
+	var dirty_set: Dictionary = { }
 	for c_name in _pending_actor_fixes.keys():
 		var acts = _pending_actor_fixes[c_name]
 		if acts is Dictionary and not acts.is_empty():
 			total_actors += acts.size()
 			chunks.append(c_name)
+			for a_name in acts.keys():
+				dirty_set[a_name] = true
 	return {
 		"total_actors": total_actors,
 		"chunks_count": chunks.size(),
 		"chunks": chunks,
+		"dirty_set": dirty_set,
 	}
 
 
@@ -486,3 +529,16 @@ func discard_all_pending_actor_fixes() -> int:
 
 	_pending_actor_fixes.clear()
 	return reverted_count
+
+
+func get_streaming_stats() -> Dictionary:
+	var total_actors = 0
+	for m_node in _active_mesh_nodes.values():
+		if m_node and "_parsed_instances" in m_node and m_node._parsed_instances is Array:
+			total_actors += m_node._parsed_instances.size()
+	return {
+		"active_chunks": _active_terrain_nodes.size(),
+		"active_mesh_chunks": _active_mesh_nodes.size(),
+		"total_static_actors": total_actors,
+	}
+

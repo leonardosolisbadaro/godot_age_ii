@@ -257,7 +257,68 @@ func _setup_local_water_volumes() -> void:
 		plane.material_override = mat
 
 		plane.position = Vector3(c_x, surface_y, c_z)
-		plane.name = "WaterVolume_" + str(v.get("name", "Local"))
+		plane.name = "WaterVolume_" + str(v.get("name", v_name))
 		add_child(plane)
 		_water_volume_nodes.append(plane)
+
+
+func update_water_volume_runtime(volume_name: String, data: Dictionary) -> bool:
+	if not _water_volumes_data.has("water_volumes") or not (_water_volumes_data["water_volumes"] is Dictionary):
+		_water_volumes_data["water_volumes"] = { }
+
+	var volumes = _water_volumes_data["water_volumes"]
+	if not volumes.has(volume_name):
+		volumes[volume_name] = { }
+
+	# Atualiza o dicionário em memória
+	for k in data.keys():
+		volumes[volume_name][k] = data[k]
+
+	var v = volumes[volume_name]
+	var surface_y = float(v.get("water_plane_height_m", v.get("surface_y_m", -320.0)))
+	var center_arr = v.get("center_m", [0.0, 0.0])
+	var size_arr = v.get("size_m", [2621.44, 2621.44])
+	var c_x = float(center_arr[0]) if center_arr.size() > 0 else 0.0
+	var c_z = float(center_arr[1]) if center_arr.size() > 1 else 0.0
+	var s_x = float(size_arr[0]) if size_arr.size() > 0 else 2621.44
+	var s_z = float(size_arr[1]) if size_arr.size() > 1 else 2621.44
+	var ocean_ext = float(v.get("ocean_extension", 0.0))
+	s_x += ocean_ext
+	s_z += ocean_ext
+
+	var is_enabled = v.get("enabled", true)
+
+	var node_name = "WaterVolume_" + volume_name
+	for plane in _water_volume_nodes:
+		if plane and (plane.name == node_name or plane.name == ("WaterVolume_" + str(v.get("name", "")))):
+			plane.position = Vector3(c_x, surface_y, c_z)
+			if plane.mesh is PlaneMesh:
+				(plane.mesh as PlaneMesh).size = Vector2(s_x, s_z)
+			plane.visible = is_enabled
+			return true
+
+	return false
+
+
+func get_raw_water_volume_data(volume_name: String) -> Dictionary:
+	var path_root = "%s/%s/water_volumes.json" % [base_maps_path, chunk_name]
+	if not FileAccess.file_exists(path_root):
+		return { }
+
+	var file = FileAccess.open(path_root, FileAccess.READ)
+	if not file:
+		return { }
+
+	var json = JSON.new()
+	var err = json.parse(file.get_as_text())
+	file.close()
+	if err != OK or not (json.data is Dictionary):
+		return { }
+
+	var raw_vols = json.data.get("water_volumes", { })
+	if raw_vols is Dictionary and raw_vols.has(volume_name):
+		return raw_vols[volume_name]
+
+	return { }
+
 

@@ -188,7 +188,7 @@ def inspect_environment(maps_dir: Path, chunk_name: str) -> None:
     print(f"\n[+] 3. ATMOSFERA & ILUMINAÇÃO: Chunk {chunk_name}")
 
     recipe_file = maps_dir / chunk_name / "client" / "environment_recipe.json"
-    water_file = maps_dir / chunk_name / "server" / "water_volumes.json"
+    water_file = maps_dir / chunk_name / "water_volumes.json"
     mat_file = maps_dir / chunk_name / "client" / "material_recipes.json"
 
     if recipe_file.is_file():

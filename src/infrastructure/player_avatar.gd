@@ -182,13 +182,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not is_local or not _camera_pivot:
 		return
 
-	# Alternar Gravidade / Modo Voo com Tecla 'G'
+	# Alternar Gravidade / Modo Voo com Tecla 'G' (ignora se algum campo de texto da UI estiver focado)
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_G:
-			is_flying = !is_flying
-			velocity = Vector3.ZERO
-		elif event.keycode == KEY_SPACE:
-			is_sprinting = !is_sprinting
+		var has_ui_focus = (get_viewport() and get_viewport().gui_get_focus_owner() != null)
+		if not has_ui_focus:
+			if event.keycode == KEY_G:
+				is_flying = !is_flying
+				velocity = Vector3.ZERO
+			elif event.keycode == KEY_SPACE:
+				is_sprinting = !is_sprinting
 
 	# Rotação de Câmera com Botão Direito do Mouse
 	if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
@@ -222,11 +224,13 @@ func _physics_process(delta: float) -> void:
 	if is_sprinting:
 		speed *= SPRINT_MULTIPLIER
 
+	var has_ui_focus = (get_viewport() and get_viewport().gui_get_focus_owner() != null)
+
 	# Modo Voo (Fly Mode sem gravidade) vs Modo Terrestre
 	if is_flying:
-		if Input.is_key_pressed(KEY_E):
+		if not has_ui_focus and Input.is_key_pressed(KEY_E):
 			velocity.y = speed
-		elif Input.is_key_pressed(KEY_Q):
+		elif not has_ui_focus and Input.is_key_pressed(KEY_Q):
 			velocity.y = -speed
 		else:
 			velocity.y = move_toward(velocity.y, 0.0, speed * delta * DECELERATION_RATE)
@@ -237,16 +241,17 @@ func _physics_process(delta: float) -> void:
 		else:
 			velocity.y = 0.0
 
-	# Input de Movimentação (WASD)
+	# Input de Movimentação (Estritamente WASD quando a UI NÃO estiver em foco de digitação)
 	var input_dir := Vector2.ZERO
-	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
-		input_dir.y -= 1.0
-	if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN):
-		input_dir.y += 1.0
-	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
-		input_dir.x -= 1.0
-	if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT):
-		input_dir.x += 1.0
+	if not has_ui_focus:
+		if Input.is_key_pressed(KEY_W):
+			input_dir.y -= 1.0
+		if Input.is_key_pressed(KEY_S):
+			input_dir.y += 1.0
+		if Input.is_key_pressed(KEY_A):
+			input_dir.x -= 1.0
+		if Input.is_key_pressed(KEY_D):
+			input_dir.x += 1.0
 
 	input_dir = input_dir.normalized()
 
