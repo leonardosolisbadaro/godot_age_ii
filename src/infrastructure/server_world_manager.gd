@@ -32,6 +32,9 @@ var base_maps_path: String = "res://assets/maps"
 var _chunks_data: Dictionary = { } # { "16_24": TerrainChunkData, ... }
 var _samplers: Dictionary = { } # { "16_24": HeightfieldSampler, ... }
 var _obstacle_indices: Dictionary = { } # { "16_24": SpatialObstacleIndex, ... }
+var _nav_map_rid: RID
+var _nav_regions: Dictionary = { } # { "16_24": RID, ... }
+var _nav_meshes: Dictionary = { } # { "16_24": NavigationMesh, ... }
 
 var _resource_adapter: RefCounted
 var _meta_use_case: RefCounted
@@ -50,6 +53,11 @@ func _init(p_base_path: String = "res://assets/maps") -> void:
 	_movement_use_case = ValidatePlayerMovementUseCaseClass.new()
 	_obstacles_use_case = LoadServerStaticObstaclesUseCaseClass.new()
 
+	_nav_map_rid = NavigationServer3D.map_create()
+	NavigationServer3D.map_set_active(_nav_map_rid, true)
+	NavigationServer3D.map_set_cell_size(_nav_map_rid, 1.5)
+	NavigationServer3D.map_set_cell_height(_nav_map_rid, 0.5)
+
 
 func load_server_chunk(chunk_name: String) -> bool:
 	var chunk_data = _meta_use_case.execute(chunk_name, _resource_adapter, true)
@@ -66,6 +74,19 @@ func load_server_chunk(chunk_name: String) -> bool:
 	_samplers[chunk_name] = sampler
 	if obstacle_index:
 		_obstacle_indices[chunk_name] = obstacle_index
+
+	# Registra a NavMesh pré-compilada no mapa de navegação 3D
+	var navmesh = _resource_adapter.load_chunk_navmesh(chunk_name)
+	if navmesh:
+		_nav_meshes[chunk_name] = navmesh
+		var region_rid = NavigationServer3D.region_create()
+		NavigationServer3D.region_set_map(region_rid, _nav_map_rid)
+		var chunk_origin = chunk_data.world_origin
+		var xform = Transform3D(Basis(), chunk_origin)
+		NavigationServer3D.region_set_transform(region_rid, xform)
+		NavigationServer3D.region_set_navigation_mesh(region_rid, navmesh)
+		_nav_regions[chunk_name] = region_rid
+
 	return true
 
 
@@ -137,3 +158,40 @@ func get_chunk_name_at(world_x: float, world_z: float) -> String:
 		):
 			return c_name
 	return ""
+
+
+func get_nav_map_rid() -> RID:
+	return _nav_map_rid
+
+
+func get_chunk_navmesh(chunk_name: String) -> NavigationMesh:
+	return _nav_meshes.get(chunk_name, null)
+
+
+func is_point_navigable(pos: Vector3, max_dist: float = 1.0) -> bool:
+	if not _nav_map_rid.is_valid():
+		return true
+	var closest = NavigationServer3D.map_get_closest_point(_nav_map_rid, pos)
+	return pos.distance_to(closest) <= max_dist
+
+
+func get_closest_navigable_point(pos: Vector3) -> Vector3:
+	if not _nav_map_rid.is_valid():
+		return pos
+	return NavigationServer3D.map_get_closest_point(_nav_map_rid, pos)
+
+
+func find_path(from_pos: Vector3, to_pos: Vector3) -> PackedVector3Array:
+	if not _nav_map_rid.is_valid():
+		return PackedVector3Array([from_pos, to_pos])
+	return NavigationServer3D.map_get_path(_nav_map_rid, from_pos, to_pos, true)
+
+
+func cleanup() -> void:
+	for r_rid in _nav_regions.values():
+		if r_rid is RID and r_rid.is_valid():
+			NavigationServer3D.free_rid(r_rid)
+	_nav_regions.clear()
+	_nav_meshes.clear()
+	if _nav_map_rid.is_valid():
+		NavigationServer3D.free_rid(_nav_map_rid)

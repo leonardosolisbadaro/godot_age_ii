@@ -358,6 +358,16 @@ func load_collision_rules_dict() -> Dictionary:
 	return _read_json_as_dict(path)
 
 
+func load_chunk_navmesh(chunk_name: String) -> NavigationMesh:
+	var navmesh_path = "%s/%s/server/navmesh.res" % [base_maps_path, chunk_name]
+	if not _file_exists(navmesh_path) and not ResourceLoader.exists(navmesh_path):
+		return null
+	var res = ResourceLoader.load(navmesh_path)
+	if res is NavigationMesh:
+		return res
+	return null
+
+
 func save_collision_override(package_name: String, mesh_name: String, collision_type: String) -> bool:
 	var path = "%s/static_mesh_collision_rules.json" % base_maps_path
 	var target = _resolve_write_path(path)
